@@ -2,10 +2,10 @@
 //  WorkoutDayRow.swift
 //  PLog
 //
-//  A single row summarizing one logged session: name and date, then what was done. Two
+//  A single row summarizing one logged session: date and name, then what was done. Two
 //  lines — a row exists to be recognized and tapped, and the exercise list is what makes a
-//  session recognizable. (For a session stamped from a plan the name already *is* the plan
-//  day's name, so there's no separate plan label.)
+//  session recognizable. The date leads (it's what distinguishes same-named sessions in the
+//  list), with the day name trailing as a secondary label.
 //
 
 import SwiftUI
@@ -18,16 +18,16 @@ struct WorkoutDayRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            // Name and date share a line until accessibility sizes, where they'd wrap into
-            // a column of single words; then the date drops under the name.
+            // Date and name share a line until accessibility sizes, where they'd wrap into
+            // a column of single words; then the name drops under the date.
             if typeSize.isAccessibilitySize {
-                title
-                date
+                dateLabel
+                nameLabel
             } else {
                 HStack(alignment: .firstTextBaseline) {
-                    title
+                    dateLabel
                     Spacer()
-                    date
+                    nameLabel
                 }
             }
             Text(summary)
@@ -39,13 +39,13 @@ struct WorkoutDayRow: View {
         .accessibilityElement(children: .combine)
     }
 
-    private var title: some View {
-        Text(day.name.isEmpty ? "Workout" : day.name)
+    private var dateLabel: some View {
+        Text(day.date.mediumDayLabel)
             .font(.headline)
     }
 
-    private var date: some View {
-        Text(day.date.mediumDayLabel)
+    private var nameLabel: some View {
+        Text(day.name.isEmpty ? "Workout" : day.name)
             .font(.subheadline)
             .foregroundStyle(.secondary)
     }
