@@ -50,7 +50,7 @@ struct PlanLogView: View {
     private var logList: some View {
         List {
             if viewModel.plan.isActive, let next = viewModel.suggestedNextDay {
-                Section("Up Next") {
+                Section {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(next.name.isEmpty ? "Day" : next.name)
@@ -62,8 +62,15 @@ struct PlanLogView: View {
                         Spacer()
                         Button("Log") { log(next) }
                             .buttonStyle(.borderedProminent)
+                            .disabled(todaysSession != nil)
                     }
                     .padding(.vertical, 4)
+                } header: {
+                    Text("Up Next")
+                } footer: {
+                    if todaysSession != nil {
+                        Text("Only one workout can be logged per day. Delete today's workout to log a different one.")
+                    }
                 }
             }
 
@@ -97,7 +104,7 @@ struct PlanLogView: View {
         } label: {
             Label("Log Workout", systemImage: "plus")
         }
-        .disabled(viewModel.days.isEmpty)
+        .disabled(viewModel.days.isEmpty || todaysSession != nil)
     }
 
     private var notStartedState: some View {
@@ -124,6 +131,12 @@ struct PlanLogView: View {
     /// sorted that way).
     private var sessions: [WorkoutDay] {
         allDays.filter { $0.planDay?.plan === viewModel.plan }
+    }
+
+    /// Today's session, if one is already logged (against any plan, or blank) — only one
+    /// workout can be logged per day, so both log actions here are disabled while it exists.
+    private var todaysSession: WorkoutDay? {
+        allDays.first { Calendar.current.isDateInToday($0.date) }
     }
 
     /// Month sections in newest-first order, built sequentially so ordering is preserved.

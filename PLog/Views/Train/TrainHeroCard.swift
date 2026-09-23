@@ -14,19 +14,49 @@ import SwiftData
 struct TrainHeroCard: View {
     /// The active plan, only if it has days to log against; `nil` shows the no-plan state.
     let plan: WorkoutPlan?
+    /// Today's session, if one is already logged — only one workout can be logged per day,
+    /// so this replaces the "Start …" actions with a way back into it instead.
+    let todaysSession: WorkoutDay?
     var onLog: (PlanDay) -> Void
     var onBlankWorkout: () -> Void
+    var onOpenToday: (WorkoutDay) -> Void
 
     var body: some View {
         AnalyticsCard {
             VStack(alignment: .leading, spacing: 12) {
-                if let plan, let next = WorkoutLogger.suggestedNextDay(in: plan) {
+                if let todaysSession {
+                    loggedTodayContent(todaysSession)
+                } else if let plan, let next = WorkoutLogger.suggestedNextDay(in: plan) {
                     planContent(plan: plan, next: next)
                 } else {
                     noPlanContent
                 }
             }
         }
+    }
+
+    // MARK: - Already logged today
+
+    @ViewBuilder
+    private func loggedTodayContent(_ session: WorkoutDay) -> some View {
+        eyebrow("Today")
+
+        VStack(alignment: .leading, spacing: 4) {
+            Text(session.name.isEmpty ? "Workout Logged" : session.name)
+                .font(.title2.weight(.bold))
+            Text("Only one workout can be logged per day. Delete this one to log a different workout today.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+
+        Button {
+            onOpenToday(session)
+        } label: {
+            Text("View Today's Workout")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.large)
     }
 
     // MARK: - Active plan
@@ -129,9 +159,15 @@ private extension LabelStyle where Self == TitleAndIconTrailingLabelStyle {
 #Preview("Active plan") {
     List {
         Section {
-            TrainHeroCard(plan: SampleData.plan, onLog: { _ in }, onBlankWorkout: {})
-                .listRowInsets(EdgeInsets())
-                .listRowBackground(Color.clear)
+            TrainHeroCard(
+                plan: SampleData.plan,
+                todaysSession: nil,
+                onLog: { _ in },
+                onBlankWorkout: {},
+                onOpenToday: { _ in }
+            )
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
         }
     }
     .modelContainer(SampleData.container)
@@ -140,9 +176,32 @@ private extension LabelStyle where Self == TitleAndIconTrailingLabelStyle {
 #Preview("No plan") {
     List {
         Section {
-            TrainHeroCard(plan: nil, onLog: { _ in }, onBlankWorkout: {})
-                .listRowInsets(EdgeInsets())
-                .listRowBackground(Color.clear)
+            TrainHeroCard(
+                plan: nil,
+                todaysSession: nil,
+                onLog: { _ in },
+                onBlankWorkout: {},
+                onOpenToday: { _ in }
+            )
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
         }
     }
+}
+
+#Preview("Logged today") {
+    List {
+        Section {
+            TrainHeroCard(
+                plan: SampleData.plan,
+                todaysSession: SampleData.recentDay,
+                onLog: { _ in },
+                onBlankWorkout: {},
+                onOpenToday: { _ in }
+            )
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
+        }
+    }
+    .modelContainer(SampleData.container)
 }

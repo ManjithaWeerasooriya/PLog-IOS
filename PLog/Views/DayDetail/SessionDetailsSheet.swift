@@ -16,6 +16,10 @@ struct SessionDetailsSheet: View {
 
     let day: WorkoutDay
 
+    /// Every other session, to block moving this one onto a day that's already taken —
+    /// only one workout can be logged per day.
+    @Query private var allDays: [WorkoutDay]
+
     @State private var name: String
     @State private var date: Date
     @State private var notes: String
@@ -33,6 +37,12 @@ struct SessionDetailsSheet: View {
         name != day.name || date != day.date || notes != day.notes
     }
 
+    /// Whether another session already exists on the picked date — only one workout can be
+    /// logged per day.
+    private var dateIsTaken: Bool {
+        allDays.contains { $0 !== day && Calendar.current.isDate($0.date, inSameDayAs: date) }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -45,6 +55,11 @@ struct SessionDetailsSheet: View {
                             Text(planDayLabel(planDay))
                                 .foregroundStyle(.secondary)
                         }
+                    }
+                } footer: {
+                    if dateIsTaken {
+                        Text("A workout is already logged on this date. Only one workout can be logged per day.")
+                            .foregroundStyle(.red)
                     }
                 }
 
@@ -68,6 +83,7 @@ struct SessionDetailsSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done", action: save)
                         .fontWeight(.semibold)
+                        .disabled(dateIsTaken)
                 }
             }
             .interactiveDismissDisabled(hasChanges)

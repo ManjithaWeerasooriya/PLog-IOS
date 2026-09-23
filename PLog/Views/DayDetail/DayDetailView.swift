@@ -67,6 +67,9 @@ struct DayDetailView: View {
                     Label("Add Exercise", systemImage: "plus")
                 }
             }
+            ToolbarItem(placement: .topBarLeading) {
+                EditButton()
+            }
         }
         .sheet(isPresented: $showingExercisePicker) {
             ExercisePickerView(onSelect: addExercise)
@@ -130,6 +133,7 @@ struct DayDetailView: View {
                         onDelete: { delete(entry) }
                     )
                 }
+                .onMove(perform: moveExercises)
             } header: {
                 Text(sessionSummary)
             }
@@ -195,6 +199,15 @@ struct DayDetailView: View {
             }
             day.entries.removeAll { $0 === entry }
             context.delete(entry)
+        }
+        try? context.save()
+    }
+
+    private func moveExercises(from source: IndexSet, to destination: Int) {
+        var ordered = day.orderedEntries
+        ordered.move(fromOffsets: source, toOffset: destination)
+        for (index, entry) in ordered.enumerated() {
+            entry.order = index
         }
         try? context.save()
     }

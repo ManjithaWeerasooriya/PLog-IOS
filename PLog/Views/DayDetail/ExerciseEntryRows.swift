@@ -53,13 +53,18 @@ struct ExerciseEntryRows: View {
                     SetRow(set: set, trend: viewModel.trend(for: set), isExpanded: isSetExpanded(set))
                 }
                 .onDelete(perform: deleteSets)
+                // These are child rows of the exercise; a reorder drag here must not act on
+                // the exercise — only the header row (below) offers the move handle.
+                .moveDisabled(true)
 
                 addSetRow
+                    .moveDisabled(true)
 
                 if let lastTime = viewModel.lastTimeLabel {
                     Label(lastTime, systemImage: "clock.arrow.circlepath")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                        .moveDisabled(true)
                 }
             }
         }

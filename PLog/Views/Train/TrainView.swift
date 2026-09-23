@@ -33,15 +33,26 @@ struct TrainView: View {
         return plan
     }
 
+    /// Today's session, if one is already logged — only one workout can be logged per day.
+    private var todaysSession: WorkoutDay? {
+        days.first { Calendar.current.isDateInToday($0.date) }
+    }
+
     var body: some View {
         NavigationStack(path: $path) {
             List {
                 // The card is its own row on the grouped background; with nothing logged yet
                 // it also carries the empty-state line, since the card *is* the action.
                 Section {
-                    TrainHeroCard(plan: loggablePlan, onLog: log, onBlankWorkout: startBlankWorkout)
-                        .listRowInsets(EdgeInsets())
-                        .listRowBackground(Color.clear)
+                    TrainHeroCard(
+                        plan: loggablePlan,
+                        todaysSession: todaysSession,
+                        onLog: log,
+                        onBlankWorkout: startBlankWorkout,
+                        onOpenToday: { path.append($0) }
+                    )
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
                 } footer: {
                     if days.isEmpty {
                         Text("Your sessions will appear here.")
