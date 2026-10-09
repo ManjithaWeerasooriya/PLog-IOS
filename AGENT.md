@@ -34,7 +34,7 @@ PLog/                        ← repo root
     │   ├── Exercise.swift           ← reusable master-list exercise
     │   ├── WorkoutDay.swift         ← one training session
     │   ├── ExerciseEntry.swift      ← exercise-within-a-day join record
-    │   ├── SetEntry.swift           ← individual set (weight, reps, RPE)
+    │   ├── SetEntry.swift           ← individual set (weight, reps, RPE, isDrop)
     │   ├── WorkoutPlan.swift        ← a program: name, startedAt/endedAt, day templates
     │   ├── PlanDay.swift            ← one day template ("Push Day") with exercise slots
     │   ├── PlanExercise.swift       ← slot: exercise + targetSets × targetReps
@@ -154,6 +154,15 @@ Setting only the to-one side (`slot.planDay = day`, or passing it to the `init`)
 ### A set has no "completed" flag
 
 `SetEntry` was simplified to drop its old `completed: Bool` tick box. A set's existence in `ExerciseEntry.orderedSets` **is** its "added" state — there's no separate in-progress/done toggle to manage. Don't reintroduce one without a concrete reason; it previously added UI weight (a checkbox on every set row and a checkmark on every exercise row) without affecting `ProgressiveOverload` or any query.
+
+### Drop sets are flagged sets, not a separate model
+
+A drop set is a `SetEntry` with `isDrop = true` that belongs to the nearest **working** set before it. `ExerciseEntry.setGroups` returns each working set followed by its drops; `workingSets` is the first of each group. `setNumber` stays a plain 1-based position across all sets (ordering only) — the UI never shows it: `ExerciseEntryViewModel.title(for:)` numbers working sets only ("Set 1, Set 2, Drop, Set 3"), and `SetRow` indents drops under a turn arrow. "N sets" in the exercise header and the set counts in `WorkoutStats` count working sets; volume includes drops (it's real work).
+
+- **Adding:** "Add Drop Set" in the add row drops off the last set; a set row's context menu (on the summary label only — a long-press on the steppers is hold-to-repeat) adds a drop after *that* set's group and converts between working set and drop. The first set can't become a drop. A new drop is seeded from the same drop last session, otherwise ~80% of the set it follows (rounded to 2.5) at the same reps. `addSet()` seeds from the last *working* set, never a drop.
+- **Deleting a working set deletes its drops** (`removeSets`), like a reminder's subtasks — otherwise they'd silently re-attach to the previous set.
+- **Comparison:** set *n* vs set *n* uses working sets only (`WorkoutHistory.previousSets` skips drops, so `WorkoutLogger` prefill isn't shifted either); a drop is graded only against the same drop (same group, same position) last time and shows no trend when there wasn't one.
+- `isDrop` has a property default so SwiftData migrates existing stores; `PLogBackup` is version 2 with an optional `SetRecord.isDrop` (v1 files read as `false`).
 
 ---
 
@@ -343,7 +352,7 @@ For an `Int?`/`Double?` model field (`UserProfile.age`/`heightCm`/`weightKg`), b
 
 ### Sets, logged exercises, and plan-day slots are all collapsible, accordion-style — same pattern, same look
 
-Sets are edited **inline on the session screen** — there is no separate set-editor sheet. `DayDetailView` renders one `ExerciseEntryRows` per `ExerciseEntry` inside a single `Section("Exercises")`; each produces a header row and, while expanded, one `SetRow` per set (a nested `ForEach` with `.onDelete`, so swipe-to-delete works per set), an "Add Set" row (seeds the next set and expands it) and a "Last time" footnote.
+Sets are edited **inline on the session screen** — there is no separate set-editor sheet. `DayDetailView` renders one `ExerciseEntryRows` per `ExerciseEntry` inside a single `Section("Exercises")`; each produces a header row and, while expanded, one `SetRow` per set (a nested `ForEach` with `.onDelete`, so swipe-to-delete works per set), an "Add Set / Add Drop Set" row (two `.borderless` buttons; seeds the new set and expands it) and a "Last time" footnote.
 
 **`SetRow` and `PlanExerciseRow` are `DisclosureGroup`s.** The label is the one-line summary; the content (the two `NumberStepper`s) becomes the group's child row, so the expand/collapse motion, chevron and row insertion are the platform's own — the same as subtasks in Reminders. This replaced a hand-rolled header `Button` + `if isExpanded { … }`: a List row's height closes faster than SwiftUI's removal transition runs, so the steppers' labels lingered over the next row on collapse (a `.move` transition slid them over the header instead, and an instant `.identity` removal made the whole thing a snap). Don't go back to a custom accordion for these rows; if you need something the group can't express, that's the signal to reconsider the design, not to re-animate it. The child row carries `.deleteDisabled(true)` (and `.moveDisabled(true)` in the plan-slot case) so a swipe or drag on the steppers never acts on the set/slot. Exercise delete and History live on the header row's `.swipeActions`/`.contextMenu`; History is presented as a **sheet** (`historyExercise`) because `DayDetailView` is reachable from three different stacks and owns no `path` to push onto. Adding an exercise (`+` → `ExercisePickerView`) inserts the entry, prefills set 1, expands both the entry and that set, and scrolls the header into view (`ScrollViewReader` + `.id(entry.persistentModelID)`) — one modal, no second sheet.
 

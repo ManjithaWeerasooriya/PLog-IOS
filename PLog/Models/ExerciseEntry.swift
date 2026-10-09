@@ -42,6 +42,24 @@ final class ExerciseEntry {
         sets.sorted { $0.setNumber < $1.setNumber }
     }
 
+    /// Each working set followed by its drop sets, in performed order. A drop with no working
+    /// set before it (only reachable through odd imported data) starts a group of its own.
+    var setGroups: [[SetEntry]] {
+        orderedSets.reduce(into: []) { groups, set in
+            if set.isDrop, !groups.isEmpty {
+                groups[groups.count - 1].append(set)
+            } else {
+                groups.append([set])
+            }
+        }
+    }
+
+    /// The numbered sets — drops are continuations of a set, not sets of their own, so they
+    /// don't count toward "3 sets" or take part in set-by-set comparison.
+    var workingSets: [SetEntry] {
+        setGroups.compactMap(\.first)
+    }
+
     /// The heaviest weight lifted across all sets in this entry.
     var topWeight: Double {
         sets.map(\.weight).max() ?? 0

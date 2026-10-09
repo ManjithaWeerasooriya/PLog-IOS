@@ -20,8 +20,9 @@ final class ExerciseEntryViewModel {
     /// comparison for a set the previous session didn't have.
     let previousTopSet: SetSnapshot?
 
-    /// The previous session's sets in order, so set *n* is graded against set *n*.
-    let previousSets: [SetSnapshot]
+    /// The previous session's sets as working-set groups (each set followed by its drops),
+    /// so set *n* is graded against set *n* and a drop against the same drop last time.
+    let previousGroups: [[SetSnapshot]]
 
     private let context: ModelContext
 
@@ -31,8 +32,8 @@ final class ExerciseEntryViewModel {
         self.previousTopSet = entry.exercise.flatMap {
             WorkoutHistory.previousTopSet(for: $0, excluding: entry)
         }
-        self.previousSets = entry.exercise.map {
-            WorkoutHistory.previousSets(for: $0, excluding: entry)
+        self.previousGroups = entry.exercise.map {
+            WorkoutHistory.previousSetGroups(for: $0, excluding: entry)
         } ?? []
     }
 
@@ -40,6 +41,17 @@ final class ExerciseEntryViewModel {
     var sets: [SetEntry] { entry.orderedSets }
 
     var exerciseName: String { entry.exercise?.name ?? "Exercise" }
+
+    /// "Set 2" for a working set — numbered among working sets only — or "Drop".
+    func title(for set: SetEntry) -> String {
+        guard let position = position(of: set) else { return "Set" }
+        return position.drop > 0 ? "Drop" : "Set \(position.group + 1)"
+    }
+
+    /// The very first set can't be a drop — there's nothing before it to drop from.
+    func canConvertToDrop(_ set: SetEntry) -> Bool {
+        !set.isDrop && sets.first !== set
+    }
 
     /// The inline hint string, e.g. "Last time: 62.5 kg × 8".
     var lastTimeLabel: String? {
@@ -61,14 +73,16 @@ final class ExerciseEntryViewModel {
         entry.sets.append(first)
     }
 
-    /// Adds the next set. It's seeded from the same-numbered set last session when there was
-    /// one (so a planned back-off set comes in at its usual load), otherwise it duplicates
-    /// the last set (the "another set, same load" flow). Returns it so the caller can expand it.
+    /// Adds the next working set. It's seeded from the same-numbered set last session when
+    /// there was one (so a planned back-off set comes in at its usual load), otherwise it
+    /// duplicates the last working set (the "another set, same load" flow) — never a drop,
+    /// whose reduced weight isn't what the next set starts at. Returns it so the caller can
+    /// expand it.
     @discardableResult
     func addSet() -> SetEntry {
         let number = (sets.last?.setNumber ?? 0) + 1
-        let seed = previousSet(number: number)
-            ?? sets.last.map { SetSnapshot(weight: $0.weight, reps: $0.reps) }
+        let seed = previousSnapshot(group: entry.setGroups.count, drop: 0)
+            ?? entry.workingSets.last.map(snapshot)
             ?? previousTopSet
             ?? SetSnapshot(weight: 20, reps: 10)
         let next = SetEntry(setNumber: number, weight: seed.weight, reps: seed.reps)
@@ -78,10 +92,51 @@ final class ExerciseEntryViewModel {
         return next
     }
 
-    /// Removes a set and renumbers the remainder so `setNumber` stays 1-based and contiguous.
-    func removeSet(_ set: SetEntry) {
-        entry.sets.removeAll { $0 === set }
-        context.delete(set)
+    /// Adds a drop set to the end of `set`'s group (after any drops it already has). It's
+    /// seeded from the same drop last session, otherwise about 20% lighter than the set it
+    /// follows — a typical drop — at the same reps. Returns it so the caller can expand it.
+    @discardableResult
+    func addDrop(after set: SetEntry) -> SetEntry {
+        let groups = entry.setGroups
+        let groupIndex = groups.firstIndex { group in group.contains { $0 === set } } ?? groups.count - 1
+        let group = groups.indices.contains(groupIndex) ? groups[groupIndex] : [set]
+        let last = group.last ?? set
+        let seed = previousSnapshot(group: groupIndex, drop: group.count)
+            ?? SetSnapshot(weight: Self.dropWeight(from: last.weight), reps: last.reps)
+
+        // Make room straight after the group so the drop sits under its own set.
+        let number = last.setNumber + 1
+        for later in entry.sets where later.setNumber >= number {
+            later.setNumber += 1
+        }
+        let drop = SetEntry(setNumber: number, weight: seed.weight, reps: seed.reps, isDrop: true)
+        context.insert(drop)
+        entry.sets.append(drop)
+        try? context.save()
+        return drop
+    }
+
+    /// Turns a working set into a drop of the set before it, or a drop back into a set.
+    func toggleDrop(_ set: SetEntry) {
+        guard set.isDrop || canConvertToDrop(set) else { return }
+        set.isDrop.toggle()
+        try? context.save()
+    }
+
+    /// Removes sets and renumbers the remainder so `setNumber` stays 1-based and contiguous.
+    /// Removing a working set takes its drops with it — they have nothing to belong to
+    /// otherwise, the way deleting a reminder takes its subtasks.
+    func removeSets(_ targets: [SetEntry]) {
+        var doomed: [SetEntry] = []
+        for group in entry.setGroups {
+            for (index, set) in group.enumerated() where targets.contains(where: { $0 === set }) {
+                doomed.append(contentsOf: index == 0 ? group : [set])
+            }
+        }
+        for set in doomed where entry.sets.contains(where: { $0 === set }) {
+            entry.sets.removeAll { $0 === set }
+            context.delete(set)
+        }
         for (index, remaining) in entry.orderedSets.enumerated() {
             remaining.setNumber = index + 1
         }
@@ -91,15 +146,40 @@ final class ExerciseEntryViewModel {
     /// Progressive-overload classification for a set versus the **same-numbered** set last
     /// session — so a deliberate back-off third set isn't graded against your heaviest set
     /// and painted red. A set the previous session didn't have falls back to the top set.
+    /// A drop is graded only against the same drop last time; with none, it has no trend.
     func trend(for set: SetEntry) -> ProgressTrend {
-        ProgressiveOverload.trend(
-            current: SetSnapshot(weight: set.weight, reps: set.reps),
-            previous: previousSet(number: set.setNumber) ?? previousTopSet
+        guard let position = position(of: set) else { return .none }
+        let previous = previousSnapshot(group: position.group, drop: position.drop)
+        return ProgressiveOverload.trend(
+            current: snapshot(set),
+            previous: position.drop > 0 ? previous : previous ?? previousTopSet
         )
     }
 
-    private func previousSet(number: Int) -> SetSnapshot? {
-        let index = number - 1
-        return previousSets.indices.contains(index) ? previousSets[index] : nil
+    // MARK: - Helpers
+
+    /// Where a set sits: its working-set group, and 0 for the working set or 1… for its drops.
+    private func position(of set: SetEntry) -> (group: Int, drop: Int)? {
+        for (groupIndex, group) in entry.setGroups.enumerated() {
+            if let dropIndex = group.firstIndex(where: { $0 === set }) {
+                return (groupIndex, dropIndex)
+            }
+        }
+        return nil
+    }
+
+    private func previousSnapshot(group: Int, drop: Int) -> SetSnapshot? {
+        guard previousGroups.indices.contains(group),
+              previousGroups[group].indices.contains(drop) else { return nil }
+        return previousGroups[group][drop]
+    }
+
+    private func snapshot(_ set: SetEntry) -> SetSnapshot {
+        SetSnapshot(weight: set.weight, reps: set.reps)
+    }
+
+    /// 80% of `weight`, rounded to the nearest 2.5 kg plate step.
+    private static func dropWeight(from weight: Double) -> Double {
+        max(0, (weight * 0.8 / 2.5).rounded() * 2.5)
     }
 }

@@ -3,7 +3,8 @@
 //  PLog
 //
 //  The rows for one exercise on the session screen: a header (tap to expand), then — while
-//  expanded — one `SetRow` per set, an "Add Set" row and a "Last time" footnote. Everything
+//  expanded — one `SetRow` per set (drops included), an "Add Set / Add Drop Set" row and a
+//  "Last time" footnote. Everything
 //  is a plain row in the enclosing List section so swipe-to-delete works per set, and only
 //  one exercise (and one set within it) is open at a time, driven by the parent.
 //
@@ -50,7 +51,16 @@ struct ExerciseEntryRows: View {
 
             if isExpanded {
                 ForEach(viewModel.sets) { set in
-                    SetRow(set: set, trend: viewModel.trend(for: set), isExpanded: isSetExpanded(set))
+                    SetRow(
+                        set: set,
+                        title: viewModel.title(for: set),
+                        trend: viewModel.trend(for: set),
+                        isExpanded: isSetExpanded(set),
+                        onAddDrop: { addDrop(after: set) },
+                        onToggleDrop: set.isDrop || viewModel.canConvertToDrop(set)
+                            ? { withAnimation(.snappy) { viewModel.toggleDrop(set) } }
+                            : nil
+                    )
                 }
                 .onDelete(perform: deleteSets)
                 // These are child rows of the exercise; a reorder drag here must not act on
@@ -91,7 +101,7 @@ struct ExerciseEntryRows: View {
                     nameAndChip
                     Spacer()
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text("^[\(entry.sets.count) set](inflect: true)")
+                        Text("^[\(entry.workingSets.count) set](inflect: true)")
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(.primary)
                         if entry.topWeight > 0 {
@@ -158,14 +168,35 @@ struct ExerciseEntryRows: View {
     /// e.g. "3 sets · Top: 60 kg" — the stacked layout's one-line summary.
     private var setSummary: String {
         // Plain pluralisation: the `^[…](inflect:)` markup only works in a `Text` literal.
-        var parts = ["\(entry.sets.count) \(entry.sets.count == 1 ? "set" : "sets")"]
+        let count = entry.workingSets.count
+        var parts = ["\(count) \(count == 1 ? "set" : "sets")"]
         if entry.topWeight > 0 {
             parts.append("Top: \(WeightFormatter.string(entry.topWeight)) kg")
         }
         return parts.joined(separator: " · ")
     }
 
+    /// Two buttons in one row, so each needs `.borderless` to take its own taps rather than
+    /// the whole row firing both. Stacked at accessibility sizes so neither label wraps.
     private var addSetRow: some View {
+        Group {
+            if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 16) {
+                    addSetButton
+                    addDropButton
+                }
+            } else {
+                HStack {
+                    addSetButton
+                    Spacer(minLength: 8)
+                    addDropButton
+                }
+            }
+        }
+        .buttonStyle(.borderless)
+    }
+
+    private var addSetButton: some View {
         Button {
             withAnimation(.snappy) {
                 let added = viewModel.addSet()
@@ -174,6 +205,19 @@ struct ExerciseEntryRows: View {
         } label: {
             Label("Add Set", systemImage: "plus.circle")
         }
+    }
+
+    /// Drops off the last set — the usual moment for one. A drop after an earlier set is in
+    /// that set's context menu.
+    private var addDropButton: some View {
+        Button {
+            if let last = viewModel.sets.last {
+                addDrop(after: last)
+            }
+        } label: {
+            Label("Add Drop Set", systemImage: "arrow.turn.down.right")
+        }
+        .disabled(viewModel.sets.isEmpty)
     }
 
     // MARK: - Helpers
@@ -185,11 +229,16 @@ struct ExerciseEntryRows: View {
         )
     }
 
+    private func addDrop(after set: SetEntry) {
+        withAnimation(.snappy) {
+            let added = viewModel.addDrop(after: set)
+            expandedSetID = added.persistentModelID
+        }
+    }
+
     private func deleteSets(at offsets: IndexSet) {
         let sets = viewModel.sets
-        for index in offsets {
-            viewModel.removeSet(sets[index])
-        }
+        viewModel.removeSets(offsets.map { sets[$0] })
     }
 }
 

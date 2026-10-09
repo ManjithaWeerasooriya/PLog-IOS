@@ -15,7 +15,9 @@ import SwiftData
 /// The on-disk shape. Object graph links use export-time UUIDs — `PersistentIdentifier`s
 /// are not stable across stores, so they're never written out.
 nonisolated struct PLogBackup: Codable {
-    static let currentVersion = 1
+    /// 2 added `SetRecord.isDrop`. An older app refuses a v2 file rather than importing
+    /// drop sets as ordinary sets.
+    static let currentVersion = 2
 
     var version: Int = PLogBackup.currentVersion
     var exportedAt: Date
@@ -83,6 +85,8 @@ nonisolated struct PLogBackup: Codable {
         var reps: Int
         var rpe: Double?
         var notes: String?
+        /// Absent in version 1 files, which predate drop sets — read as `false`.
+        var isDrop: Bool?
     }
 
     var setCount: Int {
@@ -190,7 +194,8 @@ enum DataBackup {
                                     weight: set.weight,
                                     reps: set.reps,
                                     rpe: set.rpe,
-                                    notes: set.notes
+                                    notes: set.notes,
+                                    isDrop: set.isDrop
                                 )
                             }
                         )
@@ -304,7 +309,8 @@ enum DataBackup {
                         weight: setRecord.weight,
                         reps: setRecord.reps,
                         rpe: setRecord.rpe,
-                        notes: setRecord.notes
+                        notes: setRecord.notes,
+                        isDrop: setRecord.isDrop ?? false
                     )
                     context.insert(set)
                     entry.sets.append(set)

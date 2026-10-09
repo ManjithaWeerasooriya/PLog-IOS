@@ -121,6 +121,15 @@ enum SampleData {
                 )
                 context.insert(set)
             }
+            // A drop set off the last set, so previews show one.
+            let drop = SetEntry(
+                setNumber: 4,
+                weight: progression.weight - 12.5,
+                reps: progression.reps,
+                isDrop: true,
+                entry: benchEntry
+            )
+            context.insert(drop)
 
             let ohpEntry = ExerciseEntry(exercise: ohp, workoutDay: day, order: 1)
             context.insert(ohpEntry)

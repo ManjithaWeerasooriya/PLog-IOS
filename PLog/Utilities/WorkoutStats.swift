@@ -48,7 +48,7 @@ enum WorkoutStats {
     }
 
     static func setCount(of day: WorkoutDay) -> Int {
-        day.entries.reduce(0) { $0 + $1.sets.count }
+        day.entries.reduce(0) { $0 + $1.workingSets.count }
     }
 
     /// Sessions dated within `[start, end)`.
@@ -104,7 +104,7 @@ enum WorkoutStats {
         for day in workouts {
             for entry in day.entries {
                 guard let group = entry.exercise?.category else { continue }
-                counts[group, default: 0] += entry.sets.count
+                counts[group, default: 0] += entry.workingSets.count
             }
         }
         return counts

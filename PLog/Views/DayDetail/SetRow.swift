@@ -3,8 +3,8 @@
 //  PLog
 //
 //  One set on the session screen: a `DisclosureGroup` whose label is the one-line summary
-//  (set number, trend badge, weight × reps) and whose content is the weight and reps
-//  steppers. Using the system group means the expand/collapse motion, chevron and row
+//  (set number — or "Drop", indented under its set — trend badge, weight × reps) and whose
+//  content is the weight and reps steppers. Using the system group means the expand/collapse motion, chevron and row
 //  insertion are the platform's own — the same as subtasks in Reminders. Edits bind
 //  straight into the model; there's no separate save step.
 //
@@ -15,10 +15,16 @@ import SwiftData
 struct SetRow: View {
     /// `@Bindable` gives the steppers two-way bindings into the SwiftData model.
     @Bindable var set: SetEntry
+    /// "Set 2" or "Drop" — numbering skips drops, so the parent works it out.
+    let title: String
     let trend: ProgressTrend
     /// Controlled by the parent so only one set is expanded at a time (accordion-style) —
     /// see `DayDetailView.expandedSetID`.
     @Binding var isExpanded: Bool
+    /// Adds a drop set after this set (and any drops it already has).
+    var onAddDrop: () -> Void = {}
+    /// Flips this row between working set and drop; `nil` when that isn't allowed.
+    var onToggleDrop: (() -> Void)?
 
     @Environment(\.dynamicTypeSize) private var typeSize
 
@@ -40,6 +46,9 @@ struct SetRow: View {
             .deleteDisabled(true)
         } label: {
             summary
+                // On the label only: a long-press on the steppers is hold-to-repeat.
+                .contextMenu { dropActions }
+                .accessibilityAction(named: "Add Drop Set", onAddDrop)
         }
         .accessibilityHint("Double-tap to edit")
         // One tick the moment a set first beats last time — not on every step after.
@@ -52,6 +61,22 @@ struct SetRow: View {
     private var steppers: some View {
         NumberStepper(title: "Weight", value: $set.weight, step: 2.5, range: 0...500, unit: "kg")
         NumberStepper(title: "Reps", intValue: $set.reps, range: 0...100)
+    }
+
+    @ViewBuilder
+    private var dropActions: some View {
+        Button(action: onAddDrop) {
+            Label("Add Drop Set", systemImage: "arrow.turn.down.right")
+        }
+        if let onToggleDrop {
+            Button(action: onToggleDrop) {
+                if set.isDrop {
+                    Label("Make Working Set", systemImage: "arrow.uturn.left")
+                } else {
+                    Label("Make Drop Set", systemImage: "arrow.turn.down.right")
+                }
+            }
+        }
     }
 
     private var summary: some View {
@@ -76,9 +101,18 @@ struct SetRow: View {
         .padding(.vertical, 4)
     }
 
+    @ViewBuilder
     private var setLabel: some View {
-        Text("Set \(set.setNumber)")
-            .font(.subheadline.weight(.semibold))
+        if set.isDrop {
+            // Indented with a turn arrow so it reads as part of the set above.
+            Label(title, systemImage: "arrow.turn.down.right")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+                .padding(.leading, 12)
+        } else {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+        }
     }
 
     private var numbers: some View {
@@ -96,8 +130,15 @@ struct SetRow: View {
             List {
                 SetRow(
                     set: SetEntry(setNumber: 1, weight: 62.5, reps: 8),
+                    title: "Set 1",
                     trend: .improved,
                     isExpanded: $isExpanded
+                )
+                SetRow(
+                    set: SetEntry(setNumber: 2, weight: 50, reps: 8, isDrop: true),
+                    title: "Drop",
+                    trend: .none,
+                    isExpanded: .constant(false)
                 )
             }
         }
