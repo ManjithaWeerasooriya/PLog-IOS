@@ -17,6 +17,8 @@ struct PlanExerciseRow: View {
     /// Controlled by the parent so only one slot is expanded at a time (accordion-style) —
     /// see `PlanDayDetailView`.
     @Binding var isExpanded: Bool
+    /// Ways to make this slot part of a superset — the parent sees its neighbours.
+    var superset: SupersetActions = .none
 
     @Environment(\.dynamicTypeSize) private var typeSize
 
@@ -39,6 +41,9 @@ struct PlanExerciseRow: View {
             .moveDisabled(true)
         } label: {
             header
+                // On the label only: a long-press on the steppers is hold-to-repeat.
+                .contextMenu { SupersetMenuItems(actions: superset) }
+                .supersetAccessibilityActions(superset)
         }
         .accessibilityHint("Double-tap to edit target sets and reps")
     }

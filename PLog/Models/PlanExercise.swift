@@ -26,17 +26,23 @@ final class PlanExercise {
     /// Target reps per set, used to prefill each created set.
     var targetReps: Int
 
+    /// Shared by adjacent slots done as a superset (see `Supersets`); carried onto the
+    /// session's entries when the day is logged.
+    var supersetID: UUID?
+
     init(
         exercise: Exercise? = nil,
         planDay: PlanDay? = nil,
         order: Int = 0,
         targetSets: Int = 3,
-        targetReps: Int = 10
+        targetReps: Int = 10,
+        supersetID: UUID? = nil
     ) {
         self.exercise = exercise
         self.planDay = planDay
         self.order = order
         self.targetSets = targetSets
         self.targetReps = targetReps
+        self.supersetID = supersetID
     }
 }

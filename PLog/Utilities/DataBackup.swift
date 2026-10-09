@@ -15,9 +15,9 @@ import SwiftData
 /// The on-disk shape. Object graph links use export-time UUIDs — `PersistentIdentifier`s
 /// are not stable across stores, so they're never written out.
 nonisolated struct PLogBackup: Codable {
-    /// 2 added `SetRecord.isDrop`. An older app refuses a v2 file rather than importing
-    /// drop sets as ordinary sets.
-    static let currentVersion = 2
+    /// 2 added `SetRecord.isDrop`; 3 added `supersetID` on entries and plan slots. An older
+    /// app refuses a newer file rather than silently dropping what it can't represent.
+    static let currentVersion = 3
 
     var version: Int = PLogBackup.currentVersion
     var exportedAt: Date
@@ -63,6 +63,8 @@ nonisolated struct PLogBackup: Codable {
         var order: Int
         var targetSets: Int
         var targetReps: Int
+        /// Absent before version 3 — read as not in a superset.
+        var supersetID: UUID?
     }
 
     nonisolated struct WorkoutRecord: Codable {
@@ -76,6 +78,8 @@ nonisolated struct PLogBackup: Codable {
     nonisolated struct EntryRecord: Codable {
         var exerciseID: UUID?
         var order: Int
+        /// Absent before version 3 — read as not in a superset.
+        var supersetID: UUID?
         var sets: [SetRecord]
     }
 
@@ -171,7 +175,8 @@ enum DataBackup {
                                     exerciseID: slot.exercise.flatMap { exerciseIDs[$0.persistentModelID] },
                                     order: slot.order,
                                     targetSets: slot.targetSets,
-                                    targetReps: slot.targetReps
+                                    targetReps: slot.targetReps,
+                                    supersetID: slot.supersetID
                                 )
                             }
                         )
@@ -188,6 +193,7 @@ enum DataBackup {
                         .init(
                             exerciseID: entry.exercise.flatMap { exerciseIDs[$0.persistentModelID] },
                             order: entry.order,
+                            supersetID: entry.supersetID,
                             sets: entry.orderedSets.map { set in
                                 .init(
                                     setNumber: set.setNumber,
@@ -282,7 +288,8 @@ enum DataBackup {
                         exercise: slotRecord.exerciseID.flatMap { exercisesByID[$0] },
                         order: slotRecord.order,
                         targetSets: slotRecord.targetSets,
-                        targetReps: slotRecord.targetReps
+                        targetReps: slotRecord.targetReps,
+                        supersetID: slotRecord.supersetID
                     )
                     context.insert(slot)
                     day.exercises.append(slot)
@@ -299,7 +306,8 @@ enum DataBackup {
             for entryRecord in record.entries {
                 let entry = ExerciseEntry(
                     exercise: entryRecord.exerciseID.flatMap { exercisesByID[$0] },
-                    order: entryRecord.order
+                    order: entryRecord.order,
+                    supersetID: entryRecord.supersetID
                 )
                 context.insert(entry)
                 day.entries.append(entry)

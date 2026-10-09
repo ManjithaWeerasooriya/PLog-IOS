@@ -15,8 +15,11 @@ struct PlanDayDetailView: View {
     @Bindable var day: PlanDay
 
     @State private var showingExercisePicker = false
-    /// The one exercise slot currently expanded (accordion-style — see `PlanExerciseRow`).
+    /// The one row currently expanded (accordion-style — see `PlanExerciseRow`); a
+    /// superset is keyed by its first slot.
     @State private var expandedSlotID: PersistentIdentifier?
+    /// The row a picked exercise will be supersetted with; `nil` for a plain add.
+    @State private var supersetAnchor: SupersetBlock<PlanExercise>?
 
     var body: some View {
         List {
@@ -41,7 +44,7 @@ struct PlanDayDetailView: View {
                 EditButton()
             }
         }
-        .sheet(isPresented: $showingExercisePicker) {
+        .sheet(isPresented: $showingExercisePicker, onDismiss: { supersetAnchor = nil }) {
             ExercisePickerView(onSelect: addExercise)
         }
     }
@@ -59,12 +62,42 @@ struct PlanDayDetailView: View {
                 }
             }
         } else {
-            Section("Exercises") {
-                ForEach(day.orderedExercises) { slot in
-                    PlanExerciseRow(planExercise: slot, isExpanded: isExpanded(slot))
+            let slots = day.orderedExercises
+            let blocks = Supersets.blocks(in: slots)
+            Section {
+                // A superset is one merged row (and moves or deletes as one).
+                ForEach(blocks) { block in
+                    if block.isSuperset {
+                        PlanSupersetRow(
+                            slots: block.members,
+                            isExpanded: isExpanded(block.first),
+                            onRemoveFromSuperset: { slot in
+                                changeSupersets { Supersets.remove(slot, in: day.orderedExercises) }
+                            },
+                            onDelete: { slot in delete([slot]) },
+                            onUngroup: { changeSupersets { Supersets.ungroup(block, in: slots) } },
+                            superset: supersetActions(for: block, in: slots)
+                        )
+                    } else {
+                        PlanExerciseRow(
+                            planExercise: block.first,
+                            isExpanded: isExpanded(block.first),
+                            superset: supersetActions(for: block, in: slots)
+                        )
+                    }
                 }
-                .onDelete(perform: deleteExercises)
-                .onMove(perform: moveExercises)
+                .onDelete { offsets in delete(offsets.flatMap { blocks[$0].members }) }
+                .onMove { source, destination in
+                    Supersets.moveBlocks(in: day.orderedExercises, from: source, to: destination)
+                    try? context.save()
+                }
+            } header: {
+                Text("Exercises")
+            } footer: {
+                // A one-time nudge: gone once there's a superset to show the idea.
+                if slots.count > 1, !blocks.contains(where: \.isSuperset) {
+                    Text("Touch and hold an exercise to make a superset.")
+                }
             }
         }
     }
@@ -76,39 +109,57 @@ struct PlanDayDetailView: View {
         )
     }
 
+    private func supersetActions(
+        for block: SupersetBlock<PlanExercise>,
+        in slots: [PlanExercise]
+    ) -> SupersetActions {
+        func join(_ direction: Supersets.Direction) -> (() -> Void)? {
+            guard Supersets.neighbor(of: block, direction, in: slots) != nil else { return nil }
+            return { changeSupersets { Supersets.join(block, with: direction, in: slots) } }
+        }
+        return SupersetActions(
+            joinPrevious: join(.previous),
+            joinNext: join(.next),
+            addExercise: {
+                supersetAnchor = block
+                showingExercisePicker = true
+            }
+        )
+    }
+
     // MARK: - Actions
+
+    private func changeSupersets(_ change: () -> Void) {
+        withAnimation(.snappy, change)
+        try? context.save()
+    }
 
     /// Appends through `day.exercises` (not by setting `slot.planDay`) so Observation fires
     /// on the day and this screen refreshes; setting only the inverse side doesn't notify.
+    /// From "Superset with New Exercise…" the slot is linked in after its anchor row, at
+    /// the superset's rounds, and the merged row opens.
     private func addExercise(_ exercise: Exercise) {
         let slot = PlanExercise(exercise: exercise, order: day.exercises.count)
         context.insert(slot)
         day.exercises.append(slot)
+        if let supersetAnchor {
+            slot.targetSets = supersetAnchor.members.map(\.targetSets).max() ?? slot.targetSets
+            Supersets.insert(slot, joining: supersetAnchor, in: day.orderedExercises)
+            withAnimation(.snappy) { expandedSlotID = supersetAnchor.first.persistentModelID }
+        }
         try? context.save()
     }
 
-    private func deleteExercises(at offsets: IndexSet) {
-        let ordered = day.orderedExercises
-        for index in offsets {
-            let slot = ordered[index]
+    private func delete(_ doomed: [PlanExercise]) {
+        for slot in doomed {
             day.exercises.removeAll { $0 === slot }
             context.delete(slot)
         }
-        renumber(ordered.enumerated().filter { !offsets.contains($0.offset) }.map(\.element))
+        let remaining = day.orderedExercises
+        Supersets.renumber(remaining)
+        // A deleted slot's superset partner may now be on its own.
+        Supersets.normalize(remaining)
         try? context.save()
-    }
-
-    private func moveExercises(from source: IndexSet, to destination: Int) {
-        var ordered = day.orderedExercises
-        ordered.move(fromOffsets: source, toOffset: destination)
-        renumber(ordered)
-        try? context.save()
-    }
-
-    private func renumber(_ ordered: [PlanExercise]) {
-        for (index, slot) in ordered.enumerated() {
-            slot.order = index
-        }
     }
 }
 

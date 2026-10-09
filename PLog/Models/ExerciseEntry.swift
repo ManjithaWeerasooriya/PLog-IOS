@@ -21,6 +21,9 @@ final class ExerciseEntry {
     /// Position within the day's exercise list (for stable ordering).
     var order: Int
 
+    /// Shared by adjacent entries done as a superset (see `Supersets`); `nil` otherwise.
+    var supersetID: UUID?
+
     /// The sets performed for this exercise on this day.
     ///
     /// Cascade delete: removing the entry removes its sets. Inverse on `SetEntry.entry`.
@@ -30,11 +33,13 @@ final class ExerciseEntry {
     init(
         exercise: Exercise? = nil,
         workoutDay: WorkoutDay? = nil,
-        order: Int = 0
+        order: Int = 0,
+        supersetID: UUID? = nil
     ) {
         self.exercise = exercise
         self.workoutDay = workoutDay
         self.order = order
+        self.supersetID = supersetID
     }
 
     /// Sets in performed order.

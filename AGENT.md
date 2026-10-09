@@ -50,6 +50,7 @@ PLog/                        ← repo root
     │   ├── Components/
     │   │   ├── NumberStepper.swift  ← ⊖ / number / ⊕ input for weight/reps/sets/age/etc. — see Code Conventions
     │   │   ├── NameEntrySheet.swift ← "name it first" sheet used to create plans and plan days
+    │   │   ├── SupersetViews.swift  ← lettered badge, chain, "Superset · n rounds" title, superset menu items
     │   │   └── TrendBadge.swift     ← green/red/gray capsule pill; CategoryChip
     │   ├── Train/
     │   │   ├── TrainView.swift      ← Train tab: hero card, then sessions by month; Settings sheet
@@ -65,6 +66,7 @@ PLog/                        ← repo root
     │   │   ├── DayDetailView.swift       ← exercises with sets edited inline; metadata behind the title menu
     │   │   ├── SessionDetailsSheet.swift ← name/date/notes editor (Cancel/Done sheet)
     │   │   ├── ExerciseEntryRows.swift   ← one exercise's rows: header, its SetRows, "Add Set", last-time hint
+    │   │   ├── SupersetEntryRows.swift   ← a superset merged into one block: chain header, sets interleaved by round
     │   │   └── SetRow.swift              ← one set: summary row; steppers appear in place when expanded
     │   ├── Entry/
     │   │   └── ExercisePickerView.swift  ← searchable sheet to pick from library
@@ -76,6 +78,7 @@ PLog/                        ← repo root
     │   │   ├── PlanDetailView.swift     ← name, Start/End button, day list, link to log
     │   │   ├── PlanDayDetailView.swift  ← day template: name + exercise slots
     │   │   ├── PlanExerciseRow.swift    ← slot row with sets/reps steppers
+    │   │   ├── PlanSupersetRow.swift    ← a superset merged into one row: shared Rounds stepper + reps per exercise
     │   │   └── PlanLogView.swift        ← date-by-date log with Rest Day gaps, "Up Next"
     │   ├── Exercises/
     │   │   ├── ExerciseLibraryView.swift ← Exercises tab: searchable list by category; owns its stack
@@ -89,6 +92,7 @@ PLog/                        ← repo root
         ├── WorkoutLogger.swift       ← stamps a PlanDay into a WorkoutDay; suggestedNextDay
         ├── WorkoutCalendar.swift     ← month grid cells + trained/rest/pending/inactive status
         ├── WorkoutStats.swift        ← analytics aggregations: volume, weekly, split, streak, best lifts
+        ├── Supersets.swift           ← superset blocks, join/insert/remove/ungroup/move/normalize (entries + plan slots)
         ├── StarterData.swift         ← first-launch seed: exercise library + 2 sample plans
         ├── DataBackup.swift          ← JSON backup format (PLogBackup) + export/decode/restore
         ├── AppTheme.swift            ← system/light/dark @AppStorage preference
@@ -163,6 +167,18 @@ A drop set is a `SetEntry` with `isDrop = true` that belongs to the nearest **wo
 - **Deleting a working set deletes its drops** (`removeSets`), like a reminder's subtasks — otherwise they'd silently re-attach to the previous set.
 - **Comparison:** set *n* vs set *n* uses working sets only (`WorkoutHistory.previousSets` skips drops, so `WorkoutLogger` prefill isn't shifted either); a drop is graded only against the same drop (same group, same position) last time and shows no trend when there wasn't one.
 - `isDrop` has a property default so SwiftData migrates existing stores; `PLogBackup` is version 2 with an optional `SetRecord.isDrop` (v1 files read as `false`).
+
+### Supersets are adjacent runs sharing a `supersetID`, shown merged
+
+`ExerciseEntry` and `PlanExercise` both carry an optional `supersetID: UUID` (and conform to `SupersetMember`, which also exposes `order`). A superset is a **run of adjacent members** with the same ID — membership is never stored as a list, so reordering can't leave a superset pointing at something far away. All logic is in `Supersets` (`Utilities/Supersets.swift`), shared by `DayDetailView` and `PlanDayDetailView`.
+
+**A superset is drawn as one merged block, not as tagged rows.** Both screens render `Supersets.blocks(in:)` — a plain exercise or a whole superset — and `ForEach` over blocks, so a superset **drags and (in plans) swipe-deletes as one**. A tagged-rows version (an "A1"/"A2" pill on each exercise) was tried first and rejected: the exercises still read as separate things.
+- **Header:** "🔗 Superset · n rounds", then the exercises stacked on a *chain* — a `SupersetBadge` letter node per exercise with a connector line running down to the next (`SupersetChain`). The connector fills the rest of each item's height, so it meets the next node however tall the name/chip wraps.
+- **Session (`SupersetEntryRows`)**, expanded: the sets interleaved by **round** — round *n* is each exercise's working set *n* plus its drops, in A, B… order — under compact "Round n" labels (tight insets, no separator below; `DayDetailView` lowers `defaultMinListRowHeight` to 28 to allow them). Each set row shows its exercise's badge and name instead of "Set n". "Add Round" adds one set to every exercise. Each exercise keeps its own `ExerciseEntryViewModel`, so prefill, drops and trends are unchanged. The block's `SupersetBlock.id` is every member's ID, so a membership change gives it a fresh identity and its view models rebuild.
+- **Plan (`PlanSupersetRow`)**: one `DisclosureGroup`; content is a shared **Rounds** stepper (sets every slot's `targetSets`) plus a reps stepper per exercise.
+- **Actions** (context menu on the block header — on a `DisclosureGroup` *label* in plans, never the steppers): a submenu per exercise (History / Remove from Superset / Remove), "Add Exercise to Superset…", join the neighbouring block, "Ungroup Superset". A plain row offers "Superset with New Exercise…" (opens the picker; `Supersets.insert` links the pick in right after it — the main way to build one) and "Superset with Previous/Next". The session block's trailing swipe is **Ungroup**, not Delete — one swipe shouldn't take several exercises' sets.
+- **Every mutation ends in `Supersets.normalize`**: a member left alone loses its ID, and a run whose ID an earlier run already uses gets a fresh one (otherwise two supersets would silently merge if they became adjacent). `remove` moves the member out to just *after* its superset so the rest stay together.
+- `WorkoutLogger` copies each slot's `supersetID` onto its entry (then normalizes, since a slot whose exercise was deleted is skipped); `WorkoutPlanViewModel.duplicate` copies it too. IDs only need to be unique within one list. `PLogBackup` version 3 carries `supersetID` on entries and plan slots.
 
 ---
 

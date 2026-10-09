@@ -29,6 +29,9 @@ struct DayDetailView: View {
     @State private var historyExercise: Exercise?
     /// A just-added exercise to scroll into view once its rows exist.
     @State private var scrollTarget: PersistentIdentifier?
+    /// The row a picked exercise will be supersetted with ("Superset with New Exercise…");
+    /// `nil` when the picker is adding a plain exercise.
+    @State private var supersetAnchor: SupersetBlock<ExerciseEntry>?
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -36,6 +39,9 @@ struct DayDetailView: View {
                 exercisesSection
                 notesSection
             }
+            // Lets a superset's "Round n" labels be shorter than a standard row; every
+            // other row is taller than this on its own content.
+            .environment(\.defaultMinListRowHeight, 28)
             .onChange(of: scrollTarget) { _, target in
                 guard let target else { return }
                 withAnimation(.snappy) { proxy.scrollTo(target, anchor: .top) }
@@ -71,7 +77,7 @@ struct DayDetailView: View {
                 EditButton()
             }
         }
-        .sheet(isPresented: $showingExercisePicker) {
+        .sheet(isPresented: $showingExercisePicker, onDismiss: { supersetAnchor = nil }) {
             ExercisePickerView(onSelect: addExercise)
         }
         .sheet(isPresented: $showingDetails) {
@@ -122,18 +128,36 @@ struct DayDetailView: View {
                 Text(sessionSummary)
             }
         } else {
+            let entries = day.orderedEntries
             Section {
-                ForEach(day.orderedEntries) { entry in
-                    ExerciseEntryRows(
-                        entry: entry,
-                        context: context,
-                        isExpanded: isExpanded(entry),
-                        expandedSetID: $expandedSetID,
-                        onHistory: { historyExercise = $0 },
-                        onDelete: { delete(entry) }
-                    )
+                // A superset is one merged block (and moves as one); everything else is a
+                // plain exercise.
+                ForEach(Supersets.blocks(in: entries)) { block in
+                    if block.isSuperset {
+                        SupersetEntryRows(
+                            entries: block.members,
+                            context: context,
+                            isExpanded: isExpanded(block.first),
+                            expandedSetID: $expandedSetID,
+                            onHistory: { historyExercise = $0 },
+                            onRemoveFromSuperset: removeFromSuperset,
+                            onDelete: delete,
+                            onUngroup: { changeSupersets { Supersets.ungroup(block, in: entries) } },
+                            superset: supersetActions(for: block, in: entries)
+                        )
+                    } else {
+                        ExerciseEntryRows(
+                            entry: block.first,
+                            context: context,
+                            isExpanded: isExpanded(block.first),
+                            expandedSetID: $expandedSetID,
+                            onHistory: { historyExercise = $0 },
+                            onDelete: { delete(block.first) },
+                            superset: supersetActions(for: block, in: entries)
+                        )
+                    }
                 }
-                .onMove(perform: moveExercises)
+                .onMove(perform: moveBlocks)
             } header: {
                 Text(sessionSummary)
             }
@@ -168,21 +192,53 @@ struct DayDetailView: View {
         )
     }
 
+    private func supersetActions(
+        for block: SupersetBlock<ExerciseEntry>,
+        in entries: [ExerciseEntry]
+    ) -> SupersetActions {
+        func join(_ direction: Supersets.Direction) -> (() -> Void)? {
+            guard Supersets.neighbor(of: block, direction, in: entries) != nil else { return nil }
+            return { changeSupersets { Supersets.join(block, with: direction, in: entries) } }
+        }
+        return SupersetActions(
+            joinPrevious: join(.previous),
+            joinNext: join(.next),
+            addExercise: {
+                supersetAnchor = block
+                showingExercisePicker = true
+            }
+        )
+    }
+
     // MARK: - Actions
 
+    private func changeSupersets(_ change: () -> Void) {
+        withAnimation(.snappy, change)
+        try? context.save()
+    }
+
     /// Creates a new entry for the chosen exercise with its first set prefilled from last
-    /// time, then opens it in place — no second sheet.
+    /// time, then opens it in place — no second sheet. From "Superset with New Exercise…"
+    /// it's linked in straight after its anchor row, and the merged block opens instead.
     private func addExercise(_ exercise: Exercise) {
         let entry = ExerciseEntry(exercise: exercise, order: day.entries.count)
         context.insert(entry)
         day.entries.append(entry)
+        if let supersetAnchor {
+            Supersets.insert(entry, joining: supersetAnchor, in: day.orderedEntries)
+        }
         ExerciseEntryViewModel.prefill(entry, in: context)
         try? context.save()
+        let opened = supersetAnchor?.first ?? entry
         withAnimation(.snappy) {
-            expandedEntryID = entry.persistentModelID
+            expandedEntryID = opened.persistentModelID
             expandedSetID = entry.orderedSets.first?.persistentModelID
         }
-        scrollTarget = entry.persistentModelID
+        scrollTarget = opened.persistentModelID
+    }
+
+    private func removeFromSuperset(_ entry: ExerciseEntry) {
+        changeSupersets { Supersets.remove(entry, in: day.orderedEntries) }
     }
 
     private func deleteWorkout() {
@@ -199,16 +255,15 @@ struct DayDetailView: View {
             }
             day.entries.removeAll { $0 === entry }
             context.delete(entry)
+            // Its superset partner may now be on its own.
+            Supersets.normalize(day.orderedEntries)
         }
         try? context.save()
     }
 
-    private func moveExercises(from source: IndexSet, to destination: Int) {
-        var ordered = day.orderedEntries
-        ordered.move(fromOffsets: source, toOffset: destination)
-        for (index, entry) in ordered.enumerated() {
-            entry.order = index
-        }
+    /// Offsets are block offsets — a superset drags as one row.
+    private func moveBlocks(from source: IndexSet, to destination: Int) {
+        Supersets.moveBlocks(in: day.orderedEntries, from: source, to: destination)
         try? context.save()
     }
 }

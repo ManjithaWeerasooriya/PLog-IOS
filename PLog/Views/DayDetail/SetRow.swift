@@ -15,8 +15,11 @@ import SwiftData
 struct SetRow: View {
     /// `@Bindable` gives the steppers two-way bindings into the SwiftData model.
     @Bindable var set: SetEntry
-    /// "Set 2" or "Drop" — numbering skips drops, so the parent works it out.
+    /// "Set 2" or "Drop" — numbering skips drops, so the parent works it out. In a
+    /// superset's rounds it's the exercise name instead.
     let title: String
+    /// The exercise's superset letter, shown as a `SupersetBadge` before the title.
+    var badge: String? = nil
     let trend: ProgressTrend
     /// Controlled by the parent so only one set is expanded at a time (accordion-style) —
     /// see `DayDetailView.expandedSetID`.
@@ -110,8 +113,13 @@ struct SetRow: View {
                 .foregroundStyle(.secondary)
                 .padding(.leading, 12)
         } else {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
+            HStack(spacing: 8) {
+                if let badge {
+                    SupersetBadge(letter: badge)
+                }
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+            }
         }
     }
 

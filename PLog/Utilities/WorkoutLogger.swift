@@ -43,7 +43,7 @@ enum WorkoutLogger {
 
         for (order, slot) in planDay.orderedExercises.enumerated() {
             guard let exercise = slot.exercise else { continue }
-            let entry = ExerciseEntry(exercise: exercise, order: order)
+            let entry = ExerciseEntry(exercise: exercise, order: order, supersetID: slot.supersetID)
             context.insert(entry)
             day.entries.append(entry)
 
@@ -61,6 +61,8 @@ enum WorkoutLogger {
                 entry.sets.append(set)
             }
         }
+        // A skipped slot (its exercise was deleted) can leave a superset partner on its own.
+        Supersets.normalize(day.orderedEntries)
 
         try? context.save()
         return day

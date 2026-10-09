@@ -23,6 +23,8 @@ struct ExerciseEntryRows: View {
     var onHistory: (Exercise) -> Void
     /// Removes this exercise from the day (the parent owns deletion).
     var onDelete: () -> Void
+    /// Ways to make this exercise part of a superset — the parent sees its neighbours.
+    var superset: SupersetActions
 
     @Environment(\.dynamicTypeSize) private var typeSize
 
@@ -34,13 +36,15 @@ struct ExerciseEntryRows: View {
         isExpanded: Binding<Bool>,
         expandedSetID: Binding<PersistentIdentifier?>,
         onHistory: @escaping (Exercise) -> Void,
-        onDelete: @escaping () -> Void
+        onDelete: @escaping () -> Void,
+        superset: SupersetActions = .none
     ) {
         _viewModel = State(initialValue: ExerciseEntryViewModel(entry: entry, context: context))
         _isExpanded = isExpanded
         _expandedSetID = expandedSetID
         self.onHistory = onHistory
         self.onDelete = onDelete
+        self.superset = superset
     }
 
     private var entry: ExerciseEntry { viewModel.entry }
@@ -125,6 +129,7 @@ struct ExerciseEntryRows: View {
         .id(entry.persistentModelID)
         .accessibilityAddTraits(isExpanded ? [.isSelected] : [])
         .accessibilityHint(isExpanded ? "Double-tap to collapse" : "Double-tap to show sets")
+        .supersetAccessibilityActions(superset)
         .swipeActions(edge: .trailing) {
             Button(role: .destructive, action: onDelete) {
                 Label("Delete", systemImage: "trash")
@@ -148,6 +153,7 @@ struct ExerciseEntryRows: View {
                     Label("History", systemImage: "chart.xyaxis.line")
                 }
             }
+            SupersetMenuItems(actions: superset)
             Button(role: .destructive, action: onDelete) {
                 Label("Remove from Day", systemImage: "trash")
             }

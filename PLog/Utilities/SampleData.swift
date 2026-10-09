@@ -94,8 +94,17 @@ enum SampleData {
             (curl, pullDay, 1, 3, 12),
             (squat, legDayTemplate, 0, 4, 5),
         ]
+        // Pull Day's row and curl are a superset, so previews show one.
+        let pullSuperset = UUID()
         for (exercise, day, order, sets, reps) in slots {
-            context.insert(PlanExercise(exercise: exercise, planDay: day, order: order, targetSets: sets, targetReps: reps))
+            context.insert(PlanExercise(
+                exercise: exercise,
+                planDay: day,
+                order: order,
+                targetSets: sets,
+                targetReps: reps,
+                supersetID: day === pullDay ? pullSuperset : nil
+            ))
         }
 
         // Three "push" sessions showing steady progression on the bench press.

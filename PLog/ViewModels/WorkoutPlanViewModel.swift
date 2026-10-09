@@ -117,7 +117,8 @@ final class WorkoutPlanViewModel {
                     exercise: slot.exercise,
                     order: slot.order,
                     targetSets: slot.targetSets,
-                    targetReps: slot.targetReps
+                    targetReps: slot.targetReps,
+                    supersetID: slot.supersetID
                 )
                 context.insert(slotCopy)
                 dayCopy.exercises.append(slotCopy)
