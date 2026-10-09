@@ -378,7 +378,7 @@ Visually, all of these are **plain rows inside one shared `Section`** — no per
 
 ## Git
 
-- Remote: `git@github.com:ManjithaWeerasooriya/PLog.git` (origin)
+- Remote: `git@github.com:ManjithaWeerasooriya/PLog-IOS.git` (origin)
 - Branch: `main`
 - `xcuserdata/` is gitignored and untracked
 - Commit message style: imperative subject line, bullet-point body for significant changes
