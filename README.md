@@ -8,7 +8,7 @@ An iOS workout tracker built for progressive overload. Log your sets per exercis
 - **Progressive overload at a glance** — every set is compared against the same-numbered set from your last session using estimated one-rep max (Epley formula), so trading weight for reps (or vice versa) is still recognized as progress, and a planned back-off set isn't painted as a regression
 - **Exercises** — a reusable master list of exercises, organized by muscle group, editable in place, with per-exercise history charts
 - **Plans** — build a rotation of day templates (Push, Pull, Legs, …), each pre-filled with target sets × reps per exercise; start a plan to begin logging against it and end it when the program is over. Duplicate a plan to tweak a copy without touching the original; only one plan is ever active at a time
-- **Progress** — a card dashboard of weekly volume, sessions, muscle-group split and best lifts, with a month calendar of training days a tap away
+- **Progress** — a dashboard of small, wide and large widgets you add, remove, resize and reorder in place: weekly volume, sessions, muscle-group split, best lifts, an activity grid that opens the month calendar, per-exercise progress charts, and a list of exercises that dipped since last time. Best Lifts expands into a searchable view of any exercise's progress. Your layout is saved and included in backups
 - **Settings** — body weight, light/dark/system appearance, and JSON export/import of everything (behind the profile button on Train)
 - **Starter content** — first launch seeds an exercise library and two sample plans (Push / Pull / Legs, Upper / Lower) so you can try it immediately
 

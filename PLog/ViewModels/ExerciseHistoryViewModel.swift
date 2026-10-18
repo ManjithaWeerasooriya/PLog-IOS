@@ -37,6 +37,28 @@ final class ExerciseHistoryViewModel {
             case .reps: return "reps"
             }
         }
+
+        /// This metric's value at one logged session.
+        func value(of point: ExerciseHistoryPoint) -> Double {
+            switch self {
+            case .weight: return point.topWeight
+            case .reps: return Double(point.topSetReps)
+            case .volume: return point.totalVolume
+            case .oneRepMax: return point.estimatedOneRepMax
+            }
+        }
+
+        /// First logged value vs last; `.none` with fewer than two sessions.
+        func overallTrend(of points: [ExerciseHistoryPoint]) -> ProgressTrend {
+            guard let first = points.first, let last = points.last, points.count >= 2 else {
+                return .none
+            }
+            let start = value(of: first)
+            let end = value(of: last)
+            if end > start { return .improved }
+            if end < start { return .regressed }
+            return .matched
+        }
     }
 
     var selectedMetric: Metric = .weight
@@ -54,23 +76,11 @@ final class ExerciseHistoryViewModel {
 
     /// The value for the currently selected metric at a given point.
     func value(for point: ExerciseHistoryPoint) -> Double {
-        switch selectedMetric {
-        case .weight: return point.topWeight
-        case .reps: return Double(point.topSetReps)
-        case .volume: return point.totalVolume
-        case .oneRepMax: return point.estimatedOneRepMax
-        }
+        selectedMetric.value(of: point)
     }
 
     /// Overall trend across the whole history (first vs last logged value).
     var overallTrend: ProgressTrend {
-        guard let first = points.first, let last = points.last, points.count >= 2 else {
-            return .none
-        }
-        let start = value(for: first)
-        let end = value(for: last)
-        if end > start { return .improved }
-        if end < start { return .regressed }
-        return .matched
+        selectedMetric.overallTrend(of: points)
     }
 }

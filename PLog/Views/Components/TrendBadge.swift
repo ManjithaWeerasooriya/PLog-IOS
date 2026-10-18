@@ -55,8 +55,30 @@ struct CategoryChip: View {
     }
 }
 
+/// Marks the user's strongest lift — same colour rule as `TrendBadge`. Orange rather than
+/// yellow, which fails even as a fill/icon on a light card.
+struct BestBadge: View {
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "trophy.fill")
+                .foregroundStyle(.orange)
+            Text("Best")
+                .foregroundStyle(.primary)
+        }
+        .lineLimit(1)
+        .fixedSize()
+        .font(.caption.weight(.semibold))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color.orange.opacity(0.15), in: Capsule())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Best lift")
+    }
+}
+
 #Preview {
     VStack(spacing: 12) {
+        BestBadge()
         TrendBadge(trend: .improved, text: "Improved")
         TrendBadge(trend: .regressed, text: "Down")
         TrendBadge(trend: .matched, text: "Same")

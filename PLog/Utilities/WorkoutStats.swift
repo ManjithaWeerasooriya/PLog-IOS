@@ -3,8 +3,8 @@
 //  PLog
 //
 //  Read-only aggregations over logged sessions for the Analytics tab: volume per day/week,
-//  sessions per week, muscle-group split, streaks, and best lifts. Pure functions over the
-//  `@Query` results so the view stays a thin layout layer.
+//  sessions per week, muscle-group split, streaks, best lifts and regressions. Pure functions
+//  over the `@Query` results so the view stays a thin layout layer.
 //
 
 import Foundation
@@ -38,6 +38,25 @@ enum WorkoutStats {
         let estimatedOneRepMax: Double
         /// Direction of the most recent session versus the one before it.
         let trend: ProgressTrend
+        var id: PersistentIdentifier { exercise.persistentModelID }
+    }
+
+    /// An exercise's latest session against the one before it, on each session's top set.
+    struct SessionComparison: Identifiable {
+        let exercise: Exercise
+        let latest: SetSnapshot
+        let previous: SetSnapshot
+        let latestDate: Date
+
+        var trend: ProgressTrend {
+            ProgressiveOverload.trend(current: latest, previous: previous)
+        }
+
+        /// Estimated 1RM change in kg; negative is a drop.
+        var change: Double {
+            latest.estimatedOneRepMax - previous.estimatedOneRepMax
+        }
+
         var id: PersistentIdentifier { exercise.persistentModelID }
     }
 
@@ -143,20 +162,45 @@ enum WorkoutStats {
             .compactMap { exercise -> ExerciseBest? in
                 let points = WorkoutHistory.historyPoints(for: exercise)
                 guard let best = points.map(\.estimatedOneRepMax).max(), best > 0 else { return nil }
-                var trend: ProgressTrend = .none
-                if points.count >= 2 {
-                    let last = points[points.count - 1]
-                    let previous = points[points.count - 2]
-                    trend = ProgressiveOverload.trend(
-                        current: SetSnapshot(weight: last.topWeight, reps: last.topSetReps),
-                        previous: SetSnapshot(weight: previous.topWeight, reps: previous.topSetReps)
-                    )
-                }
+                let trend = lastSessionComparison(for: exercise, points: points)?.trend ?? .none
                 return ExerciseBest(exercise: exercise, estimatedOneRepMax: best, trend: trend)
             }
             .sorted { $0.estimatedOneRepMax > $1.estimatedOneRepMax }
             .prefix(limit)
             .map { $0 }
+    }
+
+    /// The last two sessions' top sets, or `nil` with fewer than two sessions. The one place
+    /// Best Lifts' arrow and the Regressing list get their answer, so they can't disagree.
+    static func lastSessionComparison(
+        for exercise: Exercise,
+        points: [ExerciseHistoryPoint]? = nil
+    ) -> SessionComparison? {
+        let points = points ?? WorkoutHistory.historyPoints(for: exercise)
+        guard points.count >= 2 else { return nil }
+        let last = points[points.count - 1]
+        let previous = points[points.count - 2]
+        return SessionComparison(
+            exercise: exercise,
+            latest: SetSnapshot(weight: last.topWeight, reps: last.topSetReps),
+            previous: SetSnapshot(weight: previous.topWeight, reps: previous.topSetReps),
+            latestDate: last.date
+        )
+    }
+
+    /// Exercises whose latest session's estimated 1RM fell below the session before,
+    /// biggest relative drop first.
+    static func regressingExercises(exercises: [Exercise]) -> [SessionComparison] {
+        exercises
+            .compactMap { lastSessionComparison(for: $0) }
+            .filter { $0.trend == .regressed }
+            .sorted { lhs, rhs in
+                relativeChange(lhs) < relativeChange(rhs)
+            }
+    }
+
+    private static func relativeChange(_ comparison: SessionComparison) -> Double {
+        comparison.change / max(comparison.previous.estimatedOneRepMax, 1)
     }
 
     /// Percentage change from `previous` to `current`; `nil` when there's no baseline.

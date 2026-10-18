@@ -2,108 +2,295 @@
 //  AnalyticsView.swift
 //  PLog
 //
-//  The Progress tab (the type keeps its old name — `ProgressView` is SwiftUI's): a card
-//  dashboard — active-plan progress, body weight, a three-month activity grid that pushes the
-//  full calendar, volume lifted this week, then weekly trend charts, a muscle-group split, and
-//  the user's best lifts. Everything is derived from `@Query` results via `WorkoutStats`.
+//  The Progress tab (the type keeps its old name — `ProgressView` is SwiftUI's): a 4-column
+//  grid of small (2×2), wide (4×2) and large (4×4) widgets the user adds, removes, resizes and
+//  reorders in place, the Control Center way. The pencil hides the navigation and tab bars
+//  and puts the cards themselves into edit mode: a ⊖ badge on each,
+//  long-press-and-drag to reorder (the others reflow live), and a fixed bar with ＋ (the
+//  `AddWidgetGallery` of live previews) and Done. The layout is the `Dashboard` row; each
+//  card is a `DashboardWidgetView` over one `DashboardData` built from this view's queries.
+//  Activity pushes the calendar and Best Lifts pushes `BestLiftsView`.
 //
 
 import SwiftUI
 import SwiftData
-import Charts
-
-/// How far back the weekly trend charts look.
-enum AnalyticsRange: Int, CaseIterable, Identifiable {
-    case eightWeeks = 8
-    case twelveWeeks = 12
-    case halfYear = 26
-
-    var id: Int { rawValue }
-    var weeks: Int { rawValue }
-    var label: String { "\(rawValue)W" }
-}
+import UniformTypeIdentifiers
 
 /// Non-model screens reachable from the Progress stack.
 enum ProgressRoute: Hashable {
     case calendar
+    case bestLifts
+}
+
+/// One grid row: a full-width widget, or one or two small ones (see `DashboardLayout`).
+private struct DashboardRow: Identifiable {
+    let widgets: [DashboardWidget]
+    var id: PersistentIdentifier? { widgets.first?.persistentModelID }
 }
 
 struct AnalyticsView: View {
+    @Environment(\.modelContext) private var context
+
     @Query(sort: \WorkoutDay.date, order: .reverse) private var workouts: [WorkoutDay]
     @Query private var plans: [WorkoutPlan]
     @Query private var profiles: [UserProfile]
     @Query(sort: \Exercise.name) private var exercises: [Exercise]
+    @Query private var dashboards: [Dashboard]
 
-    @State private var range: AnalyticsRange = .twelveWeeks
+    @State private var isEditing = false
+    @State private var showingAddWidget = false
+    /// An Exercise Progress widget whose exercise is being changed from its context menu.
+    @State private var widgetChangingExercise: DashboardWidget?
+    /// The widget being dragged in edit mode; the drop delegates move it as it passes others.
+    @State private var draggedWidget: DashboardWidget?
+    /// Bumped on every removal, to drive the haptic.
+    @State private var removals = 0
 
-    // Scaled with the type size so the ring and legend dots keep pace with their labels.
-    // The donut stays fixed: it's a chart, and at accessibility sizes its legend drops
-    // beneath it instead.
-    @ScaledMetric(relativeTo: .title2) private var ringSize = 64
-    @ScaledMetric(relativeTo: .caption) private var legendDot = 7
-    private let donutSize: CGFloat = 136
-
-    private let calendar = Calendar.current
+    @ScaledMetric(relativeTo: .body) private var badgeSize = 26
 
     var body: some View {
         NavigationStack {
-            Group {
-                if workouts.isEmpty {
-                    emptyState
-                } else {
-                    dashboard
+            content
+                // Under the bars too (and as the navigation bar's own fill), so nothing white
+                // shows while the bars slide away and back.
+                .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
+                .toolbarBackground(Color(uiColor: .systemGroupedBackground), for: .navigationBar)
+                .navigationTitle("Progress")
+                // Edit mode hides both bars and shows its own ＋ / Done. `setEditing` animates
+                // the change, so the tab bar slides away and back.
+                .toolbar(isEditing ? .hidden : .visible, for: .navigationBar)
+                .toolbar(isEditing ? .hidden : .visible, for: .tabBar)
+                // Never leave the tab bar hidden behind: leaving the tab (or anything that
+                // takes this screen away) ends editing.
+                .onDisappear { if isEditing { setEditing(false) } }
+                .toolbar {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button { setEditing(true) } label: {
+                            Label("Edit Dashboard", systemImage: "pencil")
+                        }
+                        .disabled(dashboard == nil)
+                    }
                 }
-            }
-            .navigationTitle("Progress")
-            .navigationDestination(for: Exercise.self) { exercise in
-                ExerciseHistoryView(exercise: exercise)
-            }
-            .navigationDestination(for: ProgressRoute.self) { route in
-                switch route {
-                case .calendar:
-                    CalendarView()
+                // Outside the ScrollView, so it stays put while the cards scroll beneath it.
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    if isEditing { editBar }
                 }
-            }
-            // The calendar's session rows push through this stack.
-            .navigationDestination(for: WorkoutDay.self) { day in
-                DayDetailView(day: day)
-            }
+                .sheet(isPresented: $showingAddWidget) {
+                    AddWidgetGallery(data: data, canAdd: { viewModel?.canAdd($0) ?? false }) { kind, exercise in
+                        withAnimation(.snappy) { viewModel?.add(kind, exercise: exercise) }
+                    }
+                }
+                .sheet(item: $widgetChangingExercise) { widget in
+                    ExercisePickerView { exercise in
+                        viewModel?.setExercise(exercise, for: widget)
+                    }
+                }
+                .sensoryFeedback(.impact(weight: .medium), trigger: removals)
+                .sensoryFeedback(.impact(weight: .light), trigger: draggedWidget?.persistentModelID) { _, new in
+                    new != nil
+                }
+                .navigationDestination(for: Exercise.self) { exercise in
+                    ExerciseHistoryView(exercise: exercise)
+                }
+                .navigationDestination(for: ProgressRoute.self) { route in
+                    switch route {
+                    case .calendar:
+                        CalendarView()
+                    case .bestLifts:
+                        BestLiftsView()
+                    }
+                }
+                // The calendar's session rows push through this stack.
+                .navigationDestination(for: WorkoutDay.self) { day in
+                    DayDetailView(day: day)
+                }
+        }
+    }
+
+    /// One branch for the grid in both modes, so entering and leaving edit mode animates the
+    /// same cards in place rather than cross-fading two copies of the dashboard.
+    @ViewBuilder
+    private var content: some View {
+        if !isEditing && workouts.isEmpty {
+            emptyState
+        } else if !isEditing && widgets.isEmpty {
+            noWidgetsState
+        } else {
+            dashboardContent
         }
     }
 
     // MARK: - Layout
 
-    private var dashboard: some View {
+    private var dashboardContent: some View {
         ScrollView {
             // 16-pt gaps between cards (8-pt grid); 12 inside them.
             VStack(spacing: 16) {
-                // Side by side while they fit; stacked at accessibility type sizes.
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 16) {
-                        planCard
-                        bodyWeightCard
-                    }
-                    .fixedSize(horizontal: false, vertical: true)
-                    VStack(spacing: 16) {
-                        planCard
-                        bodyWeightCard
-                    }
+                ForEach(rows) { row in
+                    gridRow(row)
+                        .transition(.scale(scale: 0.85).combined(with: .opacity))
                 }
-
-                activityCard
-                weekVolumeCard
-                totalsRow
-
-                trendsHeader
-                weeklyVolumeCard
-                sessionsCard
-                muscleSplitCard
-                bestLiftsCard
             }
             .padding(.horizontal)
+            // Room for the ⊖ badges that overhang the first row.
+            .padding(.top, isEditing ? 12 : 0)
             .padding(.bottom, 24)
         }
+        .overlay {
+            if isEditing && widgets.isEmpty {
+                ContentUnavailableView {
+                    Label("No Widgets", systemImage: "square.grid.2x2")
+                } description: {
+                    Text("Tap ＋ to add a widget.")
+                }
+            }
+        }
         .background(Color(uiColor: .systemGroupedBackground))
+    }
+
+    @ViewBuilder
+    private func gridRow(_ row: DashboardRow) -> some View {
+        if row.widgets.count == 2 {
+            // Two smalls side by side; stacked at accessibility type sizes.
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 16) {
+                    ForEach(row.widgets) { widgetCell($0) }
+                }
+                // Equal heights when accessibility type sizes let the cells grow.
+                .fixedSize(horizontal: false, vertical: true)
+                VStack(spacing: 16) {
+                    ForEach(row.widgets) { widgetCell($0) }
+                }
+            }
+        } else if let widget = row.widgets.first {
+            if widget.size == .small {
+                // A small widget with no partner keeps its half width.
+                HStack(spacing: 16) {
+                    widgetCell(widget)
+                    Color.clear.frame(maxWidth: .infinity, maxHeight: 0)
+                }
+            } else {
+                widgetCell(widget)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func widgetCell(_ widget: DashboardWidget) -> some View {
+        if let kind = widget.kind {
+            let card = DashboardWidgetView(
+                kind: kind,
+                data: data,
+                range: rangeBinding(for: widget),
+                size: widget.size,
+                exercise: widget.exercise
+            ) {
+                widgetChangingExercise = widget
+            }
+
+            if isEditing {
+                ZStack {
+                    // The card's own links, menus and buttons sleep while editing; the clear
+                    // layer takes the touches instead, so the drag lifts the whole card.
+                    card.allowsHitTesting(false)
+                    Color.clear.contentShape(Rectangle())
+                }
+                .contentShape(.dragPreview, RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .onDrag {
+                    draggedWidget = widget
+                    return NSItemProvider(object: widget.kindRawValue as NSString)
+                }
+                .overlay(alignment: .topLeading) {
+                    removeBadge(for: widget, kind: kind)
+                }
+                .onDrop(of: [.text], delegate: WidgetDropDelegate(
+                    target: widget,
+                    dragged: $draggedWidget,
+                    move: move
+                ))
+                .accessibilityElement(children: .contain)
+                .accessibilityAction(named: "Remove \(kind.title)") { remove(widget) }
+            } else {
+                card
+                    .contextMenu {
+                        if kind.supportedSizes.count > 1 {
+                            Picker(selection: sizeBinding(for: widget)) {
+                                ForEach(kind.supportedSizes) { size in
+                                    Text(size.label).tag(size)
+                                }
+                            } label: {
+                                Label("Size", systemImage: "rectangle.expand.vertical")
+                            }
+                            .pickerStyle(.menu)
+                        }
+                        if kind.needsExercise {
+                            Button {
+                                widgetChangingExercise = widget
+                            } label: {
+                                Label("Change Exercise…", systemImage: "arrow.triangle.2.circlepath")
+                            }
+                        }
+                        Button {
+                            setEditing(true)
+                        } label: {
+                            Label("Edit Dashboard", systemImage: "pencil")
+                        }
+                    }
+            }
+        }
+    }
+
+    /// Control Center's gray ⊖, hung off the card's top-left corner.
+    private func removeBadge(for widget: DashboardWidget, kind: DashboardWidgetKind) -> some View {
+        Button {
+            remove(widget)
+        } label: {
+            Image(systemName: "minus")
+                .font(.system(size: badgeSize * 0.5, weight: .bold))
+                .foregroundStyle(Color(uiColor: .systemBackground))
+                .frame(width: badgeSize, height: badgeSize)
+                .background(Color(uiColor: .systemGray), in: Circle())
+                .frame(width: 44, height: 44)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .offset(x: -(22 - badgeSize / 2) - 8, y: -(22 - badgeSize / 2) - 8)
+        .accessibilityLabel("Remove \(kind.title)")
+    }
+
+    /// The edit-mode bar: ＋ top-leading, Done top-trailing, floating over the cards. Card-
+    /// coloured fills (not material) so a chart scrolling beneath never shows through.
+    private var editBar: some View {
+        HStack {
+            Button {
+                showingAddWidget = true
+            } label: {
+                Image(systemName: "plus")
+                    .font(.title3.weight(.semibold))
+                    .frame(width: 44, height: 44)
+                    .background(Color(uiColor: .secondarySystemGroupedBackground), in: Circle())
+                    .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
+            }
+            .accessibilityLabel("Add Widget")
+
+            Spacer()
+
+            Button {
+                setEditing(false)
+            } label: {
+                Text("Done")
+                    .font(.headline)
+                    .padding(.horizontal, 18)
+                    .frame(minHeight: 44)
+                    .background(Color(uiColor: .secondarySystemGroupedBackground), in: Capsule())
+                    .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
+            }
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Color.accentColor)
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+        .transition(.move(edge: .top).combined(with: .opacity))
     }
 
     private var emptyState: some View {
@@ -114,495 +301,108 @@ struct AnalyticsView: View {
         }
     }
 
-    // MARK: - Plan & body weight
-
-    private var planCard: some View {
-        AnalyticsCard {
-            VStack(alignment: .leading, spacing: 12) {
-                if let plan = activePlan {
-                    let target = max(plan.days.count, 1)
-                    let done = thisWeek?.sessions ?? 0
-                    ProgressRing(progress: Double(done) / Double(target)) {
-                        Text("\(done)")
-                            .font(.title2.bold())
-                            .monospacedDigit()
-                    }
-                    .frame(width: ringSize, height: ringSize)
-                    Spacer(minLength: 0)
-                    AnalyticsCardTitle(
-                        title: plan.name.isEmpty ? "Plan" : plan.name,
-                        subtitle: planSubtitle(for: plan, done: done, target: target)
-                    )
-                } else {
-                    ProgressRing(progress: 0) {
-                        Image(systemName: "pause.fill")
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(width: ringSize, height: ringSize)
-                    Spacer(minLength: 0)
-                    AnalyticsCardTitle(title: "No active plan", subtitle: "Start one in Plans")
-                }
-            }
-            .frame(maxHeight: .infinity, alignment: .top)
+    private var noWidgetsState: some View {
+        ContentUnavailableView {
+            Label("No Widgets", systemImage: "square.grid.2x2")
+        } description: {
+            Text("Add widgets to see your volume, consistency and lifts here.")
+        } actions: {
+            Button("Edit Dashboard") { setEditing(true) }
         }
     }
 
-    private func planSubtitle(for plan: WorkoutPlan, done: Int, target: Int) -> String {
-        var parts = ["\(done) of \(target) this week"]
-        if let next = WorkoutLogger.suggestedNextDay(in: plan), !next.name.isEmpty {
-            parts.append("Next: \(next.name)")
-        }
-        return parts.joined(separator: " · ")
+    // MARK: - Editing
+
+    private func setEditing(_ editing: Bool) {
+        draggedWidget = nil
+        withAnimation(.snappy) { isEditing = editing }
     }
 
-    private var bodyWeightCard: some View {
-        AnalyticsCard {
-            VStack(alignment: .leading, spacing: 12) {
-                if let weight = profiles.first?.weightKg {
-                    BigStat(value: WeightFormatter.string(weight), unit: "kg")
-                } else {
-                    BigStat(value: "—", unit: "kg")
-                }
-                Spacer(minLength: 0)
-                AnalyticsCardTitle(
-                    title: "Body weight",
-                    subtitle: profiles.first?.weightKg == nil ? "Set it in Settings" : "From your profile"
-                )
-            }
-            .frame(maxHeight: .infinity, alignment: .top)
-        }
+    private func remove(_ widget: DashboardWidget) {
+        withAnimation(.snappy) { viewModel?.remove(widget) }
+        removals += 1
     }
 
-    // MARK: - Activity grid
-
-    /// Tappable: pushes the full month calendar.
-    private var activityCard: some View {
-        NavigationLink(value: ProgressRoute.calendar) {
-            AnalyticsCard {
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack(alignment: .top) {
-                        AnalyticsCardTitle(title: "Activity", subtitle: "Last 3 months")
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.tertiary)
-                    }
-                    ActivityDotGrid(months: activityMonths)
-                    HStack(spacing: 14) {
-                        legendItem(color: .accentColor, text: "Workout")
-                        legendItem(color: Color.primary.opacity(0.18), text: "Rest day")
-                        Spacer()
-                        Text("\(recentWorkoutCount) workout\(recentWorkoutCount == 1 ? "" : "s")")
-                            .monospacedDigit()
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
-            }
-        }
-        .buttonStyle(.plain)
+    /// Moves the dragged widget into the target's slot. Called as the drag enters each card,
+    /// so the rest reflow live; each step saves, so a drag that ends anywhere is kept.
+    private func move(_ dragged: DashboardWidget, onto target: DashboardWidget) {
+        guard let dashboard else { return }
+        var ordered = dashboard.orderedWidgets
+        guard
+            let from = ordered.firstIndex(where: { $0 === dragged }),
+            let to = ordered.firstIndex(where: { $0 === target }),
+            from != to
+        else { return }
+        ordered.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
+        withAnimation(.snappy) { viewModel?.reorder(ordered, moved: dragged) }
     }
 
-    private func legendItem(color: Color, text: String) -> some View {
-        HStack(spacing: 5) {
-            Circle().fill(color).frame(width: legendDot, height: legendDot)
-            Text(text)
-        }
+    private func sizeBinding(for widget: DashboardWidget) -> Binding<DashboardWidgetSize> {
+        Binding(
+            get: { widget.size },
+            set: { newValue in
+                withAnimation(.snappy) { viewModel?.setSize(newValue, for: widget) }
+            }
+        )
     }
 
-    // MARK: - Last 7 days volume
-
-    private var weekVolumeCard: some View {
-        AnalyticsCard {
-            VStack(alignment: .leading, spacing: 12) {
-                cardHeader(title: "Volume lifted", subtitle: "Last 7 days") {
-                    BigStat(value: WeightFormatter.volumeString(last7Volume), unit: "kg", style: .title)
-                    if let change = WorkoutStats.percentChange(from: previous7Volume, to: last7Volume) {
-                        TrendBadge(
-                            trend: change > 0.5 ? .improved : (change < -0.5 ? .regressed : .matched),
-                            text: "\(change > 0 ? "+" : "")\(Int(change.rounded()))% vs prior week"
-                        )
-                    }
-                }
-
-                Chart(last7Days) { day in
-                    BarMark(
-                        x: .value("Day", day.date, unit: .day),
-                        y: .value("Volume", day.volume)
-                    )
-                    .foregroundStyle(Color.accentColor)
-                    .cornerRadius(3)
-                }
-                .chartXAxis {
-                    AxisMarks(values: .stride(by: .day)) { _ in
-                        AxisValueLabel(format: .dateTime.weekday(.narrow), centered: true)
-                    }
-                }
-                .chartYAxis(.hidden)
-                .frame(height: 72)
-                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+    private func rangeBinding(for widget: DashboardWidget) -> Binding<AnalyticsRange> {
+        Binding(
+            get: { widget.range },
+            set: { newValue in
+                withAnimation(.snappy) { widget.range = newValue }
+                try? context.save()
             }
-        }
-    }
-
-    // MARK: - Totals
-
-    private var totalsRow: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 16) {
-                totalStats
-            }
-            .fixedSize(horizontal: false, vertical: true)
-            VStack(spacing: 16) {
-                totalStats
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var totalStats: some View {
-        miniStat(value: "\(workouts.count)", label: "Workouts")
-        miniStat(value: WeightFormatter.volumeString(Double(totalSets)), label: "Sets")
-        miniStat(value: "\(streak)", label: streak == 1 ? "Week streak" : "Weeks streak")
-    }
-
-    private func miniStat(value: String, label: String) -> some View {
-        AnalyticsCard {
-            VStack(alignment: .leading, spacing: 4) {
-                BigStat(value: value, style: .title2)
-                Text(label)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            .frame(maxHeight: .infinity, alignment: .top)
-        }
-    }
-
-    // MARK: - Trends
-
-    private var trendsHeader: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack {
-                trendsTitle
-                Spacer()
-                rangePicker
-                    .fixedSize()
-            }
-            VStack(alignment: .leading, spacing: 8) {
-                trendsTitle
-                rangePicker
-            }
-        }
-        .padding(.top, 8)
-    }
-
-    private var trendsTitle: some View {
-        Text("Trends")
-            .font(.title3.weight(.semibold))
-    }
-
-    private var rangePicker: some View {
-        Picker("Range", selection: $range) {
-            ForEach(AnalyticsRange.allCases) { range in
-                Text(range.label).tag(range)
-            }
-        }
-        .pickerStyle(.segmented)
-    }
-
-    private var weeklyVolumeCard: some View {
-        AnalyticsCard {
-            VStack(alignment: .leading, spacing: 12) {
-                cardHeader(title: "Weekly volume", subtitle: "kg lifted per week") {
-                    BigStat(value: WeightFormatter.volumeString(averageWeeklyVolume), unit: "kg avg", style: .title2)
-                }
-                Chart(weekly) { week in
-                    BarMark(
-                        x: .value("Week", week.weekStart, unit: .weekOfYear),
-                        y: .value("Volume", week.volume)
-                    )
-                    .foregroundStyle(Color.accentColor)
-                    .cornerRadius(3)
-                }
-                .chartXAxis { weeklyAxis }
-                .frame(height: 160)
-                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-            }
-        }
-    }
-
-    private var sessionsCard: some View {
-        AnalyticsCard {
-            VStack(alignment: .leading, spacing: 12) {
-                cardHeader(title: "Sessions per week", subtitle: "Consistency") {
-                    BigStat(value: String(format: "%.1f", averageWeeklySessions), unit: "avg", style: .title2)
-                }
-                Chart {
-                    ForEach(weekly) { week in
-                        BarMark(
-                            x: .value("Week", week.weekStart, unit: .weekOfYear),
-                            y: .value("Sessions", week.sessions)
-                        )
-                        .foregroundStyle(Color.accentColor)
-                        .cornerRadius(3)
-                    }
-                    if let target = activePlan?.days.count, target > 0 {
-                        RuleMark(y: .value("Plan", target))
-                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
-                            .foregroundStyle(.secondary)
-                            .annotation(position: .top, alignment: .leading) {
-                                Text("Plan: \(target)/wk")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                    }
-                }
-                .chartXAxis { weeklyAxis }
-                .chartYAxis {
-                    AxisMarks(values: Array(0...sessionsAxisMax)) { _ in
-                        AxisGridLine()
-                        AxisValueLabel()
-                    }
-                }
-                .frame(height: 160)
-                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-            }
-        }
-    }
-
-    private var weeklyAxis: some AxisContent {
-        AxisMarks(values: .stride(by: .weekOfYear, count: max(1, range.weeks / 4))) { _ in
-            AxisGridLine()
-            AxisValueLabel(format: .dateTime.month(.abbreviated).day())
-        }
-    }
-
-    // MARK: - Muscle split
-
-    @ViewBuilder
-    private var muscleSplitCard: some View {
-        let split = muscleSplit
-        let total = split.reduce(0) { $0 + $1.sets }
-        AnalyticsCard {
-            VStack(alignment: .leading, spacing: 12) {
-                AnalyticsCardTitle(title: "Muscle groups", subtitle: "Sets in the last \(range.weeks) weeks")
-                if split.isEmpty {
-                    Text("No sets logged in this range.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                } else {
-                    ViewThatFits(in: .horizontal) {
-                        HStack(spacing: 20) { muscleSplitContent(split, total: total) }
-                        VStack(alignment: .leading, spacing: 16) { muscleSplitContent(split, total: total) }
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func muscleSplitContent(_ split: [WorkoutStats.MuscleGroupShare], total: Int) -> some View {
-        Chart(split) { share in
-            SectorMark(
-                angle: .value("Sets", share.sets),
-                innerRadius: .ratio(0.66),
-                angularInset: 1.5
-            )
-            .foregroundStyle(share.group.color)
-            .cornerRadius(3)
-        }
-        .chartLegend(.hidden)
-        .frame(width: donutSize, height: donutSize)
-        .overlay {
-            VStack(spacing: 0) {
-                Text("\(total)")
-                    .font(.title2.bold())
-                    .monospacedDigit()
-                Text("sets")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(split.prefix(5)) { share in
-                HStack(spacing: 8) {
-                    Circle().fill(share.group.color).frame(width: legendDot, height: legendDot)
-                    Text(share.group.displayName)
-                        .font(.subheadline)
-                        .lineLimit(1)
-                    Spacer()
-                    Text("\(Int((Double(share.sets) / Double(max(total, 1)) * 100).rounded()))%")
-                        .font(.subheadline.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
-            }
-            if split.count > 5 {
-                Text("+\(split.count - 5) more")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
-        }
-    }
-
-    /// Title/subtitle leading with a stat trailing — or, when the stat no longer fits
-    /// beside the title at large type sizes, the stat beneath it.
-    private func cardHeader<Trailing: View>(
-        title: String,
-        subtitle: String,
-        @ViewBuilder trailing: () -> Trailing
-    ) -> some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top) {
-                AnalyticsCardTitle(title: title, subtitle: subtitle)
-                Spacer()
-                VStack(alignment: .trailing, spacing: 4) { trailing() }
-            }
-            VStack(alignment: .leading, spacing: 8) {
-                AnalyticsCardTitle(title: title, subtitle: subtitle)
-                VStack(alignment: .leading, spacing: 4) { trailing() }
-            }
-        }
-    }
-
-    // MARK: - Best lifts
-
-    @ViewBuilder
-    private var bestLiftsCard: some View {
-        let lifts = bestLifts
-        if !lifts.isEmpty {
-            AnalyticsCard {
-                VStack(alignment: .leading, spacing: 12) {
-                    AnalyticsCardTitle(title: "Best lifts", subtitle: "Estimated one-rep max")
-                    VStack(spacing: 0) {
-                        ForEach(Array(lifts.enumerated()), id: \.element.id) { index, lift in
-                            NavigationLink(value: lift.exercise) {
-                                HStack(spacing: 12) {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(lift.exercise.name)
-                                            .font(.subheadline.weight(.medium))
-                                            .foregroundStyle(.primary)
-                                        Text(lift.exercise.category.displayName)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    TrendBadge(trend: lift.trend)
-                                    Text("\(WeightFormatter.string(lift.estimatedOneRepMax)) kg")
-                                        .font(.subheadline.monospacedDigit())
-                                        .foregroundStyle(.primary)
-                                    Image(systemName: "chevron.right")
-                                        .font(.caption.weight(.semibold))
-                                        .foregroundStyle(.tertiary)
-                                }
-                                .padding(.vertical, 10)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            if index < lifts.count - 1 {
-                                Divider()
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        )
     }
 
     // MARK: - Derived data
 
-    private var activePlan: WorkoutPlan? {
-        plans.first(where: \.isActive)
+    private var dashboard: Dashboard? { dashboards.first }
+
+    /// Holds no state of its own (just the dashboard and the context), so it's built on use
+    /// rather than kept: `@Environment` isn't readable in `init`, and this screen is created
+    /// by the tab bar with no context to hand it.
+    private var viewModel: DashboardViewModel? {
+        dashboard.map { DashboardViewModel(dashboard: $0, context: context) }
     }
 
-    private var weekly: [WorkoutStats.WeekSummary] {
-        WorkoutStats.weeklySummaries(workouts: workouts, weeks: range.weeks, calendar: calendar)
-    }
-
-    private var thisWeek: WorkoutStats.WeekSummary? {
-        WorkoutStats.weeklySummaries(workouts: workouts, weeks: 1, calendar: calendar).first
-    }
-
-    private var averageWeeklyVolume: Double {
-        guard !weekly.isEmpty else { return 0 }
-        return weekly.reduce(0) { $0 + $1.volume } / Double(weekly.count)
-    }
-
-    private var averageWeeklySessions: Double {
-        guard !weekly.isEmpty else { return 0 }
-        return Double(weekly.reduce(0) { $0 + $1.sessions }) / Double(weekly.count)
-    }
-
-    private var sessionsAxisMax: Int {
-        let peak = weekly.map(\.sessions).max() ?? 0
-        return max(peak, activePlan?.days.count ?? 0, 1)
-    }
-
-    private var last7Days: [WorkoutStats.DailyVolume] {
-        WorkoutStats.dailyVolumes(workouts: workouts, days: 7, calendar: calendar)
-    }
-
-    private var last7Volume: Double {
-        last7Days.reduce(0) { $0 + $1.volume }
-    }
-
-    private var previous7Volume: Double {
-        let todayStart = calendar.startOfDay(for: .now)
-        guard
-            let end = calendar.date(byAdding: .day, value: -6, to: todayStart),
-            let start = calendar.date(byAdding: .day, value: -7, to: end)
-        else { return 0 }
-        return WorkoutStats.workouts(workouts, from: start, before: end)
-            .reduce(0) { $0 + WorkoutStats.volume(of: $1) }
-    }
-
-    private var totalSets: Int {
-        workouts.reduce(0) { $0 + WorkoutStats.setCount(of: $1) }
-    }
-
-    private var streak: Int {
-        WorkoutStats.weekStreak(workouts: workouts, calendar: calendar)
-    }
-
-    private var muscleSplit: [WorkoutStats.MuscleGroupShare] {
-        guard let start = weekly.first?.weekStart else { return [] }
-        return WorkoutStats.muscleGroupSplit(
-            workouts: WorkoutStats.workouts(workouts, from: start, before: .distantFuture)
+    private var data: DashboardData {
+        DashboardData(
+            workouts: workouts,
+            plans: plans,
+            bodyWeightKg: profiles.first?.weightKg,
+            exercises: exercises
         )
     }
 
-    private var bestLifts: [WorkoutStats.ExerciseBest] {
-        WorkoutStats.bestLifts(exercises: exercises)
+    private var widgets: [DashboardWidget] {
+        (dashboard?.orderedWidgets ?? []).filter { $0.kind != nil }
     }
 
-    /// The current month and the two before it, oldest first.
-    private var activityMonths: [ActivityMonth] {
-        let historyStart = WorkoutCalendar.historyStart(workouts: workouts, plans: plans, calendar: calendar)
-        let thisMonth = WorkoutCalendar.startOfMonth(.now, calendar: calendar)
-        return (0..<3).reversed().compactMap { back in
-            guard let month = calendar.date(byAdding: .month, value: -back, to: thisMonth) else { return nil }
-            let cells = WorkoutCalendar.monthCells(
-                for: month,
-                workouts: workouts,
-                historyStart: historyStart,
-                calendar: calendar
-            )
-            return ActivityMonth(
-                id: month,
-                label: month.formatted(.dateTime.month(.abbreviated)),
-                weeks: WorkoutCalendar.weeks(cells)
-            )
-        }
+    private var rows: [DashboardRow] {
+        DashboardLayout.rows(widgets).map(DashboardRow.init)
+    }
+}
+
+/// Reorders live: as a dragged card passes over another, it takes that card's place.
+private struct WidgetDropDelegate: DropDelegate {
+    let target: DashboardWidget
+    @Binding var dragged: DashboardWidget?
+    let move: (DashboardWidget, DashboardWidget) -> Void
+
+    func dropEntered(info: DropInfo) {
+        guard let dragged, dragged !== target else { return }
+        move(dragged, target)
     }
 
-    private var recentWorkoutCount: Int {
-        activityMonths
-            .flatMap(\.weeks)
-            .flatMap { $0 }
-            .compactMap { $0 }
-            .filter { if case .trained = $0.status { return true } else { return false } }
-            .count
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        dragged = nil
+        return true
     }
 }
 

@@ -22,6 +22,8 @@ enum SampleData {
             PlanDay.self,
             PlanExercise.self,
             UserProfile.self,
+            Dashboard.self,
+            DashboardWidget.self,
         ])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         do {
@@ -50,6 +52,16 @@ enum SampleData {
             sortBy: [SortDescriptor(\.date, order: .reverse)]
         )
         return (try? context.fetch(descriptor))?.first ?? WorkoutDay(name: "Push Day")
+    }
+
+    /// Everything the dashboard widgets read, from the seeded store, for widget previews.
+    static var dashboardData: DashboardData {
+        DashboardData(
+            workouts: (try? context.fetch(FetchDescriptor<WorkoutDay>(sortBy: [SortDescriptor(\.date, order: .reverse)]))) ?? [],
+            plans: (try? context.fetch(FetchDescriptor<WorkoutPlan>())) ?? [],
+            bodyWeightKg: 72,
+            exercises: (try? context.fetch(FetchDescriptor<Exercise>(sortBy: [SortDescriptor(\.name)]))) ?? []
+        )
     }
 
     /// The seeded, currently active Push/Pull/Legs plan.
@@ -171,6 +183,19 @@ enum SampleData {
         }
 
         UserProfile.ensureExists(in: context)
+
+        // The default dashboard plus the two widgets that aren't in it, so previews show them.
+        Dashboard.ensureExists(in: context)
+        if let dashboard = try? context.fetch(FetchDescriptor<Dashboard>()).first {
+            let extras = [
+                DashboardWidget(kind: .exerciseProgress, order: dashboard.widgets.count, exercise: bench),
+                DashboardWidget(kind: .regressingExercises, order: dashboard.widgets.count + 1),
+            ]
+            for widget in extras {
+                context.insert(widget)
+                dashboard.widgets.append(widget)
+            }
+        }
         try? context.save()
     }
 }

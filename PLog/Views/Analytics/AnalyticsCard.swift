@@ -11,18 +11,50 @@ import SwiftUI
 struct AnalyticsCard<Content: View>: View {
     private let content: Content
 
+    /// Set by the dashboard grid: the cell's height. Outside the grid (Train's hero card)
+    /// it's `nil` and the card is as tall as its content.
+    @Environment(\.analyticsCardHeight) private var gridHeight
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     init(@ViewBuilder content: () -> Content) {
         self.content = content()
     }
 
     var body: some View {
-        content
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                Color(uiColor: .secondarySystemGroupedBackground),
-                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-            )
+        if let gridHeight {
+            // Exactly the cell's height, so the grid lines up and charts can stretch to fill;
+            // at accessibility type sizes the cell height becomes a minimum and text wins.
+            let exact = !dynamicTypeSize.isAccessibilitySize
+            tile
+                .frame(maxWidth: .infinity, minHeight: exact ? nil : gridHeight, maxHeight: .infinity, alignment: .topLeading)
+                .background(background)
+                .frame(height: exact ? gridHeight : nil)
+        } else {
+            tile
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(background)
+        }
+    }
+
+    private var tile: some View {
+        content.padding(16)
+    }
+
+    private var background: some View {
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .fill(Color(uiColor: .secondarySystemGroupedBackground))
+    }
+}
+
+private struct AnalyticsCardHeightKey: EnvironmentKey {
+    static let defaultValue: CGFloat? = nil
+}
+
+extension EnvironmentValues {
+    /// The dashboard grid cell height an `AnalyticsCard` fills; `nil` outside the grid.
+    var analyticsCardHeight: CGFloat? {
+        get { self[AnalyticsCardHeightKey.self] }
+        set { self[AnalyticsCardHeightKey.self] = newValue }
     }
 }
 

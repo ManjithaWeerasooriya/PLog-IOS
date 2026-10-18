@@ -37,7 +37,7 @@ struct DataTransferSection: View {
         } header: {
             Text("Data")
         } footer: {
-            Text("Export saves your exercises, plans, logged workouts and profile as a JSON file. Importing a backup replaces everything currently in the app.")
+            Text("Export saves your exercises, plans, logged workouts, profile and Progress layout as a JSON file. Importing a backup replaces everything currently in the app.")
         }
         .fileExporter(
             isPresented: $showingExporter,

@@ -15,9 +15,10 @@ import SwiftData
 /// The on-disk shape. Object graph links use export-time UUIDs — `PersistentIdentifier`s
 /// are not stable across stores, so they're never written out.
 nonisolated struct PLogBackup: Codable {
-    /// 2 added `SetRecord.isDrop`; 3 added `supersetID` on entries and plan slots. An older
-    /// app refuses a newer file rather than silently dropping what it can't represent.
-    static let currentVersion = 3
+    /// 2 added `SetRecord.isDrop`; 3 added `supersetID` on entries and plan slots; 4 added
+    /// the Progress `dashboard` layout; 5 added each widget's `size`. An older app refuses a
+    /// newer file rather than silently dropping what it can't represent.
+    static let currentVersion = 5
 
     var version: Int = PLogBackup.currentVersion
     var exportedAt: Date
@@ -25,6 +26,8 @@ nonisolated struct PLogBackup: Codable {
     var exercises: [ExerciseRecord]
     var plans: [PlanRecord]
     var workouts: [WorkoutRecord]
+    /// Absent before version 4 — restored as the default layout.
+    var dashboard: [DashboardWidgetRecord]?
 
     nonisolated struct ProfileRecord: Codable {
         var name: String
@@ -93,6 +96,17 @@ nonisolated struct PLogBackup: Codable {
         var isDrop: Bool?
     }
 
+    nonisolated struct DashboardWidgetRecord: Codable {
+        /// A `DashboardWidgetKind` raw value; kinds this build doesn't know are skipped.
+        var kind: String
+        var order: Int
+        var rangeWeeks: Int
+        var exerciseID: UUID?
+        /// A `DashboardWidgetSize` raw value. Absent before version 5 — and an unknown or
+        /// unsupported value — reads as the kind's default size.
+        var size: String?
+    }
+
     var setCount: Int {
         workouts.reduce(0) { $0 + $1.entries.reduce(0) { $0 + $1.sets.count } }
     }
@@ -128,6 +142,7 @@ enum DataBackup {
         let plans = try context.fetch(FetchDescriptor<WorkoutPlan>(sortBy: [SortDescriptor(\.createdAt)]))
         let workouts = try context.fetch(FetchDescriptor<WorkoutDay>(sortBy: [SortDescriptor(\.date)]))
         let profile = try context.fetch(FetchDescriptor<UserProfile>()).first ?? UserProfile()
+        let dashboard = try context.fetch(FetchDescriptor<Dashboard>()).first
 
         var exerciseIDs: [PersistentIdentifier: UUID] = [:]
         for exercise in exercises {
@@ -207,6 +222,15 @@ enum DataBackup {
                         )
                     }
                 )
+            },
+            dashboard: dashboard?.orderedWidgets.map { widget in
+                .init(
+                    kind: widget.kindRawValue,
+                    order: widget.order,
+                    rangeWeeks: widget.rangeWeeks,
+                    exerciseID: widget.exercise.flatMap { exerciseIDs[$0.persistentModelID] },
+                    size: widget.size.rawValue
+                )
             }
         )
 
@@ -234,9 +258,20 @@ enum DataBackup {
     }
 
     /// Replaces everything in the store with the backup's contents. Not a merge: the caller
-    /// must have confirmed the wipe. The profile row is updated in place so the singleton
-    /// guarantee from `UserProfile.ensureExists` holds throughout.
+    /// must have confirmed the wipe. The profile and dashboard rows are updated in place so the
+    /// singleton guarantees from `UserProfile`/`Dashboard.ensureExists` hold throughout.
     static func restore(_ backup: PLogBackup, into context: ModelContext) throws {
+        let dashboard = try context.fetch(FetchDescriptor<Dashboard>()).first ?? {
+            let created = Dashboard()
+            context.insert(created)
+            return created
+        }()
+        let oldWidgets = dashboard.widgets
+        dashboard.widgets.removeAll()
+        for widget in oldWidgets {
+            context.delete(widget)
+        }
+
         // Sessions first, then plans, then exercises: the cascade/nullify rules mean
         // nothing later in this order still points at something deleted earlier.
         for day in try context.fetch(FetchDescriptor<WorkoutDay>()) { context.delete(day) }
@@ -324,6 +359,27 @@ enum DataBackup {
                     entry.sets.append(set)
                 }
             }
+        }
+
+        if let records = backup.dashboard {
+            for (index, record) in records.sorted(by: { $0.order < $1.order }).enumerated() {
+                guard let kind = DashboardWidgetKind(rawValue: record.kind) else { continue }
+                let widget = DashboardWidget(
+                    kind: kind,
+                    order: index,
+                    range: AnalyticsRange(rawValue: record.rangeWeeks) ?? .twelveWeeks,
+                    size: record.size.flatMap(DashboardWidgetSize.init(rawValue:)),
+                    exercise: record.exerciseID.flatMap { exercisesByID[$0] }
+                )
+                context.insert(widget)
+                dashboard.widgets.append(widget)
+            }
+        } else {
+            dashboard.addDefaultWidgets(in: context)
+        }
+        // Store the order as the grid draws it (sizes can pull a small widget up).
+        for (index, widget) in DashboardLayout.packedOrder(dashboard.orderedWidgets).enumerated() {
+            widget.order = index
         }
 
         try context.save()

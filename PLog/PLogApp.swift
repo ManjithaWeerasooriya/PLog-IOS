@@ -27,6 +27,8 @@ struct PLogApp: App {
             PlanDay.self,
             PlanExercise.self,
             UserProfile.self,
+            Dashboard.self,
+            DashboardWidget.self,
         ])
         do {
             let container = try ModelContainer(for: schema)
@@ -34,6 +36,9 @@ struct PLogApp: App {
             StarterData.seedIfNeeded(in: container.mainContext)
             // Always: guarantees exactly one UserProfile row exists for Settings to edit.
             UserProfile.ensureExists(in: container.mainContext)
+            // Always: the Progress layout, seeded with the default widgets for new and
+            // pre-widget stores alike.
+            Dashboard.ensureExists(in: container.mainContext)
             return container
         } catch {
             fatalError("Failed to create ModelContainer: \(error)")

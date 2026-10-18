@@ -34,6 +34,10 @@ final class Exercise {
     @Relationship(inverse: \PlanExercise.exercise)
     var planExercises: [PlanExercise] = []
 
+    /// Exercise Progress widgets tracking this exercise. Nullified on delete.
+    @Relationship(inverse: \DashboardWidget.exercise)
+    var dashboardWidgets: [DashboardWidget] = []
+
     init(
         name: String,
         category: MuscleGroup = .other,

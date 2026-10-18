@@ -1,6 +1,6 @@
 # PLog — Agent Reference
 
-iOS workout tracker for progressive overload. Lets the user log sets per exercise per session and see whether they improved versus the last time they did the same exercise. Workout plans (Push/Pull/Legs-style day templates) can be started/ended and stamp out pre-filled sessions. Four tabs: Train (today's workout + the session log), Progress (analytics dashboard; the month calendar is pushed from it), Plans, Exercises. Settings is a sheet behind the profile button on Train.
+iOS workout tracker for progressive overload. Lets the user log sets per exercise per session and see whether they improved versus the last time they did the same exercise. Workout plans (Push/Pull/Legs-style day templates) can be started/ended and stamp out pre-filled sessions. Four tabs: Train (today's workout + the session log), Progress (a customisable widget dashboard; the month calendar and Best Lifts are pushed from it), Plans, Exercises. Settings is a sheet behind the profile button on Train.
 
 ---
 
@@ -40,18 +40,20 @@ PLog/                        ← repo root
     │   ├── PlanExercise.swift       ← slot: exercise + targetSets × targetReps
     │   ├── PlanStatus.swift         ← notStarted / active / ended (nonisolated enum)
     │   ├── UserProfile.swift        ← the user's own details; singleton (ensureExists(in:))
+    │   ├── Dashboard.swift          ← Progress layout: Dashboard singleton, DashboardWidget, kinds, sizes, DashboardLayout packing
     │   └── Gender.swift              ← plain enum incl. .preferNotToSay, not Optional<Gender>
     ├── ViewModels/
     │   ├── ExerciseEntryViewModel.swift   ← per-exercise set list: prefill, duplicate-set, per-set trend
     │   ├── ExerciseHistoryViewModel.swift ← metric picker, chart data, overall trend
     │   ├── ExerciseLibraryViewModel.swift ← search/filter/add/delete for master list
+    │   ├── DashboardViewModel.swift       ← Progress edit mode: add/remove/reorder/resize widgets, change a widget's exercise
     │   └── WorkoutPlanViewModel.swift     ← start/end, day CRUD, logWorkout(for:) stamping
     ├── Views/
     │   ├── Components/
     │   │   ├── NumberStepper.swift  ← ⊖ / number / ⊕ input for weight/reps/sets/age/etc. — see Code Conventions
     │   │   ├── NameEntrySheet.swift ← "name it first" sheet used to create plans and plan days
     │   │   ├── SupersetViews.swift  ← lettered badge, chain, "Superset · n rounds" title, superset menu items
-    │   │   └── TrendBadge.swift     ← green/red/gray capsule pill; CategoryChip
+    │   │   └── TrendBadge.swift     ← green/red/gray capsule pill; CategoryChip; BestBadge
     │   ├── Train/
     │   │   ├── TrainView.swift      ← Train tab: hero card, then sessions by month; Settings sheet
     │   │   ├── TrainHeroCard.swift  ← "Start <next day>" card; other days + blank workout in a menu
@@ -59,8 +61,14 @@ PLog/                        ← repo root
     │   ├── Calendar/
     │   │   └── CalendarView.swift   ← month grid, pushed from Progress; plain stack content
     │   ├── Analytics/
-    │   │   ├── AnalyticsView.swift     ← Progress tab (type keeps its name): card dashboard + charts
+    │   │   ├── AnalyticsView.swift     ← Progress tab (type keeps its name): widget grid + in-place edit mode (⊖, drag, ＋/Done bar)
+    │   │   ├── DashboardWidgetView.swift ← one widget drawn from DashboardData; every built-in card's layout
+    │   │   ├── AddWidgetGallery.swift  ← ＋ sheet: live, scaled widget previews (sample data before the first workout)
     │   │   ├── AnalyticsCard.swift     ← card tile, title, BigStat, ProgressRing
+    │   │   ├── ExerciseProgressWidget.swift    ← one exercise's est. 1RM chart; pushes its history
+    │   │   ├── RegressingExercisesWidget.swift ← exercises whose latest est. 1RM fell, with the drop
+    │   │   ├── TotalsWidget.swift      ← workouts / sets / week streak at small, wide and large; light/dark previews
+    │   │   ├── BestLiftsView.swift     ← Best Lifts expanded: selected exercise's chart + ranked list + search
     │   │   └── ActivityDotGrid.swift   ← 3-month "did I train?" dot grid
     │   ├── DayDetail/
     │   │   ├── DayDetailView.swift       ← exercises with sets edited inline; metadata behind the title menu
@@ -71,7 +79,8 @@ PLog/                        ← repo root
     │   ├── Entry/
     │   │   └── ExercisePickerView.swift  ← searchable sheet to pick from library
     │   ├── History/
-    │   │   └── ExerciseHistoryView.swift ← Swift Charts line chart per exercise; Edit button
+    │   │   ├── ExerciseHistoryView.swift  ← metric picker + chart + session list per exercise; Edit button
+    │   │   └── ExerciseHistoryChart.swift ← the shared per-exercise line chart + "No History Yet" empty view
     │   ├── Plans/
     │   │   ├── PlanListView.swift       ← Plans tab: owns its stack; declares PlanRoute enum
     │   │   ├── WorkoutPlanRow.swift     ← plan row + PlanStatusPill
@@ -131,9 +140,9 @@ Setting only the to-one side (`slot.planDay = day`, or passing it to the `init`)
 
 `ExerciseEntry` has an `order: Int` field for stable positioning within a day. `WorkoutDay.orderedEntries` and `ExerciseEntry.orderedSets` sort on this / on `setNumber`. Always use these computed properties in the UI instead of `.entries` or `.sets` directly.
 
-### All eight models must be listed in the Schema
+### All ten models must be listed in the Schema
 
-`PLogApp` and `SampleData` both construct `ModelContainer` with an explicit `Schema([WorkoutDay.self, Exercise.self, ExerciseEntry.self, SetEntry.self, WorkoutPlan.self, PlanDay.self, PlanExercise.self, UserProfile.self])`. Add any new `@Model` class here too.
+`PLogApp` and `SampleData` both construct `ModelContainer` with an explicit `Schema([WorkoutDay.self, Exercise.self, ExerciseEntry.self, SetEntry.self, WorkoutPlan.self, PlanDay.self, PlanExercise.self, UserProfile.self, Dashboard.self, DashboardWidget.self])`. Add any new `@Model` class here too.
 
 ### Light/Dark mode is an `@AppStorage` preference, not `UserProfile`
 
@@ -219,7 +228,7 @@ Plans and Exercises used to share one "Library" tab behind a segmented Plans | E
 
 **New plans and plan days are named before they exist.** "+" on Plans and "Add Day" on a plan both present `NameEntrySheet` (`Views/Components/NameEntrySheet.swift` — the Reminders "New List" pattern: focused field, Cancel / Create disabled while blank). The record is inserted only on confirm, so backing out never leaves an unnamed placeholder behind and there is no phantom-record cleanup anywhere. Don't insert-then-push for a new record; name it first.
 
-`AnalyticsView` (the Progress tab) owns its own `NavigationStack` and registers three destinations: `Exercise` → `ExerciseHistoryView` (best-lifts rows), `ProgressRoute.calendar` → `CalendarView` (the activity card is a `NavigationLink(value:)`), and `WorkoutDay` → `DayDetailView` (the calendar's session rows push through this stack). `CalendarView` is plain stack content — it must not wrap itself in a `NavigationStack`. `SettingsView` is presented as a sheet from `TrainView`'s profile button and keeps its own `NavigationStack` (with a Done button), which is fine for a sheet.
+`AnalyticsView` (the Progress tab) owns its own `NavigationStack` and registers three destinations: `Exercise` → `ExerciseHistoryView` (Exercise Progress and Regressing widgets, Best Lifts' "Full History"), `ProgressRoute` → `CalendarView` (`.calendar`, the activity card) or `BestLiftsView` (`.bestLifts`, the Best Lifts card) — both cards are whole-card `NavigationLink(value:)`s with a chevron — and `WorkoutDay` → `DayDetailView` (the calendar's session rows push through this stack). `CalendarView` and `BestLiftsView` are plain stack content — it must not wrap itself in a `NavigationStack`. `SettingsView` is presented as a sheet from `TrainView`'s profile button and keeps its own `NavigationStack` (with a Done button), which is fine for a sheet.
 
 ### Plans → sessions (the Train tab)
 
@@ -233,11 +242,22 @@ Both screens follow the list/read-screen pattern: `@Query` in the view, all math
 
 **Calendar cell language is iOS Calendar's, by design.** A trained day is a filled accent circle with a white number; today is an accent number; the selected day is a filled label-coloured circle with an inverted number, plus a small accent dot beneath it when it was also trained. Rest and inactive days get *nothing* — an earlier version drew an open-circle dot under every past rest day plus a legend, which decorated the default state and made the grid noisy; the month summary caption ("3 workouts · 6 rest days") carries the rest-day count in words instead. Don't add per-day decoration for the absence of a workout.
 
-`WorkoutStats` (weekly summaries, daily volumes, muscle split, week streak, best lifts) always returns fixed-width series that include empty periods as zeros, so bar charts keep a stable width. Weeks are bucketed by `Calendar.dateInterval(of: .weekOfYear)` start, honoring the device's first weekday. The "Best lifts" trend reuses `ProgressiveOverload.trend` on the last two sessions' top sets — don't compare raw weights there either. Volume totals display via `WeightFormatter.volumeString` (grouped, no decimals); individual weights still use `WeightFormatter.string`.
+`WorkoutStats` (weekly summaries, daily volumes, muscle split, week streak, best lifts) always returns fixed-width series that include empty periods as zeros, so bar charts keep a stable width. Weeks are bucketed by `Calendar.dateInterval(of: .weekOfYear)` start, honoring the device's first weekday. The "Best lifts" trend and the Regressing Exercises widget both come from `WorkoutStats.lastSessionComparison` (`ProgressiveOverload.trend` on the last two sessions' top sets), so an exercise can't be red in one and missing from the other — don't compare raw weights there either, and don't add a second comparison. Volume totals display via `WeightFormatter.volumeString` (grouped, no decimals); individual weights still use `WeightFormatter.string`.
 
 `AnalyticsView`'s cards use `Color(uiColor: .secondarySystemGroupedBackground)` tiles on a `.systemGroupedBackground` scroll view so they look right in both themes; wrap any new widget in `AnalyticsCard` rather than inventing another card style (`TrainHeroCard` uses it too — it's the app's one card container). Cards are 16-pt continuous-radius with 16-pt gaps between them and 12-pt spacing inside (8-pt grid).
 
 **Exactly one plan can be active.** `WorkoutPlanViewModel.start()` fetches every plan and sets `endedAt` on any other active one before starting this one. `TrainView` relies on this (`plans.first(where: \.isActive)`). Don't add another code path that sets `startedAt` without going through `start()`.
+
+### The Progress dashboard is a persisted widget list
+
+Every Progress card is a widget: a `DashboardWidget` row (kind, order, `rangeWeeks`, optional `sizeRawValue`, optional `exercise`) on the singleton `Dashboard` (`Models/Dashboard.swift`). It lives in SwiftData rather than `@AppStorage` because an Exercise Progress widget points at an `Exercise` — only a relationship survives renames, deletes (nullify: the card then asks for another exercise rather than vanishing) and a backup restore. `Dashboard.ensureExists(in:)` runs at launch next to `UserProfile.ensureExists` and seeds `DashboardWidgetKind.defaultLayout` (the pre-widget cards in their old order) the first time, including for stores from before widgets existed. The `Dashboard` row's existence is the "already seeded" marker, so a user who removes every widget gets an empty-state with an Edit button, not the defaults back. `kindRawValue` is a `String` so an unknown kind loads and is simply not drawn; rename kinds with the `case new = "old"` rule.
+
+- **Rendering:** every card is a `DashboardWidgetView(kind:data:range:size:exercise:)` — pure layout over a `DashboardData` (workouts, plans, body weight, exercises) that `AnalyticsView` builds from its queries. The same view draws the dashboard and the Add Widget previews, so a preview is the real card.
+- **Sizes on a 4-column grid.** `DashboardWidgetSize` is `.small` (2×2), `.wide` (4×2) or `.large` (4×4). Each kind declares `supportedSizes` and a `defaultSize` (Body Weight and Active Plan small; Best Lifts large; the rest wide). Activity is wide (three months of dots in a compact row; it was 4×4 and mostly empty) or small (this month only, as a weekday-by-week dot calendar, `ActivityMonthDots`, today ringed); both push the calendar. `DashboardWidget.size` reads `sizeRawValue`, and `nil` (every widget saved before sizes existed) or an unsupported value falls back to the default, so no migration step is needed. A row unit is `DashboardGrid.baseUnit` (80 pt, `@ScaledMetric(relativeTo: .body)`) with 16-pt gaps, so small is square; `AnalyticsCard` reads the cell height from the `analyticsCardHeight` environment value and fills it exactly. At accessibility type sizes that height becomes a minimum, and text wins over grid alignment. Each card lays itself out per size: small Plan/Body Weight stack, wide ones sit side by side; Best Lifts and Regressing show 2 rows when wide and 5 when large, with "+n more"; Totals (`TotalsWidget`) is three compact rows when small, three columns when wide and three explained rows when large, each figure on an accent icon tile. Its compact rows say "Wk streak" because "Weeks streak" can't fit a half-width card at large type sizes (VoiceOver still reads the full label); Muscle Groups puts a small donut beside the top three when wide, or a big donut over a two-column legend when large; charts stretch to fill the cell. Resize from the card's context menu (Size ▸), not in edit mode.
+- **Packing (`DashboardLayout.rows`).** Full-width widgets take a row each; small ones pair up. A lone small widget pulls the next small one up beside it, past full-width widgets in between (dense packing, like the Home Screen), so a half-empty row only remains when no other small widget follows; that one keeps its half width. The stored `order` is always the packed order (`DashboardViewModel.renumber`), so the saved layout and a backup match the screen. During a drag the dragged widget is the `anchor`: if packing would pull it up to an earlier lone small widget, the lone one moves down to join it instead. Without that, dragging one of a pair below a wide widget snapped straight back. Weekly Volume, Sessions and Muscle Groups each keep their own range — the old shared "Trends" segmented picker became a small range menu in each card's subtitle, live-bound to `widget.range` (autosave lane). Every card's context menu has "Edit Dashboard" (plus "Change Exercise…" on Exercise Progress).
+- **Edit mode is in place, Control Center style.** The pencil hides the navigation bar *and* the tab bar (`.toolbar(.hidden, for: .navigationBar)` and `for: .tabBar`, animated by `setEditing`'s `withAnimation`). `.onDisappear` ends editing so the tab bar can't be left hidden, and the page's grouped background extends under both bars so nothing white shows while they slide. The grid is one `if` branch in both modes. With separate branches, entering edit mode cross-faded two copies of the dashboard instead of animating the cards in place and puts the cards themselves into edit mode: a gray ⊖ badge hangs off each card's top-left corner (44-pt hit target; removal animates with a scale/fade transition and a haptic), and long-press-drag reorders. Drag uses `onDrag`/`onDrop` with a `DropDelegate` whose `dropEntered` moves the dragged widget into the target's slot, so the others reflow live as it passes; each step saves, so a drag that ends anywhere is kept (a haptic fires on pickup). While editing, each card's own links/menus get `allowsHitTesting(false)` and a clear layer takes the touches. ＋ (top-leading) and Done (top-trailing) sit in a `.safeAreaInset(edge: .top)` bar *outside* the `ScrollView`, so they stay put while the cards scroll beneath; they use card-coloured fills, not material, so charts never show through. ＋ opens `AddWidgetGallery`: each addable kind rendered for real at its default size and scaled to 80%. `ScaledWidgetPreview` is handed the card's known grid size (`DashboardGrid.height`). Don't measure it with a `GeometryReader` into `@State`: once cards filled their cell height, that fed back into layout and hung the app at 100% CPU, filled with the user's data or with the `SampleData` fixture before their first workout. Tapping a preview adds it and dismisses; Exercise Progress starts on the strongest lift (change it from the card's context menu). Structural changes go through `DashboardViewModel`, which `AnalyticsView` builds on use from its dashboard + context (it holds no state, and the tab bar creates `AnalyticsView` with no context to pass into an `init`). Removing a widget isn't confirmed: it deletes no user data and can be re-added. An earlier list-based editor (a `List` in edit mode plus a names-and-icons picker) was replaced by this; don't bring it back.
+- **Best Lifts** expands the way Activity does: the whole card pushes `BestLiftsView`, which opens on the top lift (marked with `BestBadge`), shows it with the shared `ExerciseHistoryChart` and metric picker, lists every lift ranked beneath to pick from, and has an always-visible search over the whole library (unlogged exercises show "Not logged" and the "No History Yet" empty view). `isSearching`/`dismissSearch` are read in a child view (`BestLiftsContent`) because they only exist beneath `.searchable`.
+- Empty states inside widgets (no regressions, no lifts, no history, deleted exercise) are `ContentUnavailableView`s, as everywhere else.
 
 ### Exercises are editable in place
 
@@ -268,7 +288,7 @@ Two lanes, matching how Apple's own apps behave — pick one per screen, never m
 
 ### Data export / import is a JSON snapshot, not the SwiftData store
 
-`DataBackup` (`Utilities/DataBackup.swift`) serialises the whole object graph to one `PLogBackup` JSON document (ISO-8601 dates, pretty-printed) and restores it. Cross-references (`PlanExercise.exercise`, `ExerciseEntry.exercise`, `WorkoutDay.planDay`) are written as **export-time UUIDs** — `PersistentIdentifier` is not stable across stores, so it never appears in the file. `PLogBackup.currentVersion` is stamped into every file; `decode` refuses a newer version with a clear message. **Bump the version and add a migration branch in `decode` when a record's shape changes** — don't silently add required fields.
+`DataBackup` (`Utilities/DataBackup.swift`) serialises the whole object graph to one `PLogBackup` JSON document (ISO-8601 dates, pretty-printed) and restores it. Cross-references (`PlanExercise.exercise`, `ExerciseEntry.exercise`, `WorkoutDay.planDay`) are written as **export-time UUIDs** — `PersistentIdentifier` is not stable across stores, so it never appears in the file. `PLogBackup.currentVersion` (5) is stamped into every file; `decode` refuses a newer version with a clear message. Version 4 added the optional `dashboard` widget list (kind raw value, order, range, exercise UUID); a file without it (v1–3) restores the default layout, and a widget kind the build doesn't know is skipped. Version 5 added an optional `size` per widget; a v4 file (or an unknown size) gives each widget its kind's default size. Restore stores the packed order. **Bump the version and add a migration branch in `decode` when a record's shape changes** — don't silently add required fields.
 
 **Import is replace-all, never merge.** `restore` deletes sessions → plans → exercises (in that order so cascade/nullify rules never leave dangling links), then re-inserts everything appending from the to-many side per the relationship rule above. The `UserProfile` row is updated in place so the singleton guarantee holds. `DataTransferSection` (Settings → Data) parses the picked file first and shows counts in a "Replace All Data?" `.alert` before anything is touched. Enum raw values that no longer decode (`MuscleGroup`, `Gender`) fall back to `.other`/`.female` rather than failing the import.
 

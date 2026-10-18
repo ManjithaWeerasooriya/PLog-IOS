@@ -8,7 +8,6 @@
 
 import SwiftUI
 import SwiftData
-import Charts
 
 struct ExerciseHistoryView: View {
     @State private var viewModel: ExerciseHistoryViewModel
@@ -75,33 +74,17 @@ struct ExerciseHistoryView: View {
                     Spacer()
                 }
 
-                Chart(viewModel.points) { point in
-                    LineMark(
-                        x: .value("Date", point.date),
-                        y: .value(viewModel.selectedMetric.rawValue, viewModel.value(for: point))
-                    )
-                    .interpolationMethod(.catmullRom)
-                    .foregroundStyle(viewModel.exercise.category.color)
-
-                    PointMark(
-                        x: .value("Date", point.date),
-                        y: .value(viewModel.selectedMetric.rawValue, viewModel.value(for: point))
-                    )
-                    .foregroundStyle(viewModel.exercise.category.color)
-                }
-                .frame(height: 220)
-                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-                .chartYScale(domain: .automatic(includesZero: false))
+                ExerciseHistoryChart(
+                    points: viewModel.points,
+                    metric: viewModel.selectedMetric,
+                    color: viewModel.exercise.category.color
+                )
             }
             .padding(.vertical, 8)
             .listRowSeparator(.hidden)
         } else {
-            ContentUnavailableView {
-                Label("No History Yet", systemImage: "chart.xyaxis.line")
-            } description: {
-                Text("Log this exercise a few times to see your progress trend.")
-            }
-            .listRowSeparator(.hidden)
+            ExerciseHistoryEmptyView()
+                .listRowSeparator(.hidden)
         }
     }
 
