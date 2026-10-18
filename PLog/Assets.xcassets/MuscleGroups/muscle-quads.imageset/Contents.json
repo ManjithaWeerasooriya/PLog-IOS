@@ -1,17 +1,17 @@
 {
   "images" : [
     {
-      "filename" : "muscle-legs.png",
+      "filename" : "muscle-quads.png",
       "idiom" : "universal",
       "scale" : "1x"
     },
     {
-      "filename" : "muscle-legs@2x.png",
+      "filename" : "muscle-quads@2x.png",
       "idiom" : "universal",
       "scale" : "2x"
     },
     {
-      "filename" : "muscle-legs@3x.png",
+      "filename" : "muscle-quads@3x.png",
       "idiom" : "universal",
       "scale" : "3x"
     }

@@ -24,7 +24,7 @@ enum StarterData {
         let library: [(String, MuscleGroup)] = [
             ("Bench Press", .chest), ("Incline Dumbbell Press", .chest), ("Cable Fly", .chest),
             ("Deadlift", .back), ("Barbell Row", .back), ("Lat Pulldown", .back), ("Seated Cable Row", .back),
-            ("Back Squat", .legs), ("Romanian Deadlift", .hamstrings), ("Leg Press", .legs),
+            ("Back Squat", .quads), ("Romanian Deadlift", .hamstrings), ("Leg Press", .quads),
             ("Leg Curl", .hamstrings), ("Calf Raise", .calves),
             ("Overhead Press", .shoulders), ("Lateral Raise", .shoulders), ("Face Pull", .rearDelts),
             ("Bicep Curl", .biceps), ("Hammer Curl", .biceps), ("Tricep Pushdown", .triceps),

@@ -14,7 +14,9 @@ import SwiftUI
 enum MuscleGroup: String, Codable, CaseIterable, Identifiable {
     case chest
     case back
-    case legs
+    /// Raw value kept as "legs" (the case's old name) so any exercise already persisted
+    /// with that category still decodes correctly — only the label changed.
+    case quads = "legs"
     case hamstrings
     case glutes
     case calves
@@ -38,7 +40,7 @@ enum MuscleGroup: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .chest: return "Chest"
         case .back: return "Back"
-        case .legs: return "Legs"
+        case .quads: return "Quads"
         case .hamstrings: return "Hamstrings"
         case .glutes: return "Glutes"
         case .calves: return "Calves"
@@ -67,7 +69,7 @@ enum MuscleGroup: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .chest: return .illustration(.muscleChest)
         case .back: return .illustration(.muscleBack)
-        case .legs: return .illustration(.muscleLegs)
+        case .quads: return .illustration(.muscleQuads)
         case .hamstrings: return .illustration(.muscleHamstrings)
         case .glutes: return .illustration(.muscleGlutes)
         case .calves: return .illustration(.muscleCalves)
@@ -98,7 +100,7 @@ enum MuscleGroup: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .chest: return .red
         case .back: return .blue
-        case .legs: return .green
+        case .quads: return .green
         // Every system hue is taken, so the split-out groups use asset shades of their
         // parent's hue (the colour their illustration highlights) that stay distinct in the donut.
         case .hamstrings: return Color(.muscleColorHamstrings)

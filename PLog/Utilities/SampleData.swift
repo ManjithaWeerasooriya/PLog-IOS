@@ -83,7 +83,7 @@ enum SampleData {
 
         // Master exercise list.
         let bench = Exercise(name: "Bench Press", category: .chest)
-        let squat = Exercise(name: "Back Squat", category: .legs)
+        let squat = Exercise(name: "Back Squat", category: .quads)
         let row = Exercise(name: "Barbell Row", category: .back)
         let ohp = Exercise(name: "Overhead Press", category: .shoulders)
         let curl = Exercise(name: "Bicep Curl", category: .biceps)
