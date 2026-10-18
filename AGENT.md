@@ -276,7 +276,7 @@ The file picker URL is security-scoped — reads must be wrapped in `startAccess
 
 ### Destructive actions confirm first — use `.alert`, not `.confirmationDialog`
 
-Deleting a `WorkoutPlan` (`PlanListView`), ending a plan (`PlanDetailView`), deleting an `Exercise` (`ExerciseLibraryView`), or importing a backup (`DataTransferSection`) stages the target in `@State` and shows a confirmation before calling `context.delete`/mutating. Stage-then-confirm, not delete-then-undo, for any new destructive action.
+Deleting a `WorkoutPlan` (`PlanListView`), ending a plan (`PlanDetailView`), deleting an `Exercise` (`ExerciseLibraryView`), deleting a `WorkoutDay` (swipe in `TrainView`, the Delete Workout button in `DayDetailView`), or importing a backup (`DataTransferSection`) stages the target in `@State` and shows a confirmation before calling `context.delete`/mutating. Stage-then-confirm, not delete-then-undo, for any new destructive action.
 
 **Use `.alert`, never `.confirmationDialog`, for these.** On the iOS version this app has been tested against, `.confirmationDialog` does not reliably render as the standard bottom action sheet — it can instead render as a small anchored callout that latches onto an arbitrary ancestor view (e.g. the top of a `List`) instead of the row that triggered it, pointing at the wrong item, and it can drop its `Cancel` button entirely. `.presentationCompactAdaptation(.sheet)` does **not** fix this. `.alert` sidesteps the whole problem — it's always a centered, unanchored modal, so there's no anchor to get wrong. This was root-caused and fixed for the plan-delete, plan-end, and exercise-delete confirmations; don't reintroduce `.confirmationDialog` for a destructive action without re-verifying on-device first.
 

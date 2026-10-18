@@ -22,6 +22,8 @@ struct TrainView: View {
     /// Navigation path so we can push a freshly-created session straight into its detail screen.
     @State private var path: [WorkoutDay] = []
     @State private var showingSettings = false
+    @State private var pendingDeleteDays: [WorkoutDay] = []
+    @State private var showingDeleteConfirmation = false
 
     private var activePlan: WorkoutPlan? {
         plans.first(where: \.isActive)
@@ -75,6 +77,15 @@ struct TrainView: View {
             .sheet(isPresented: $showingSettings) {
                 SettingsView()
             }
+            // `.alert`, not `.confirmationDialog` — see AGENT.md on destructive confirmations.
+            .alert(deleteConfirmationTitle, isPresented: $showingDeleteConfirmation) {
+                Button("Delete", role: .destructive, action: confirmDelete)
+                Button("Cancel", role: .cancel) { pendingDeleteDays = [] }
+            } message: {
+                Text(pendingDeleteDays.count == 1
+                     ? "Its exercises and sets will be removed."
+                     : "Their exercises and sets will be removed.")
+            }
             .navigationDestination(for: WorkoutDay.self) { day in
                 DayDetailView(day: day)
             }
@@ -94,7 +105,7 @@ struct TrainView: View {
                     }
                 }
                 .onDelete { offsets in
-                    delete(from: section.days, at: offsets)
+                    requestDelete(from: section.days, at: offsets)
                 }
             }
         }
@@ -130,11 +141,26 @@ struct TrainView: View {
         path.append(day)
     }
 
-    private func delete(from sectionDays: [WorkoutDay], at offsets: IndexSet) {
-        for index in offsets {
-            context.delete(sectionDays[index])
+    /// Stages the swiped sessions; nothing is deleted until the alert is confirmed.
+    private func requestDelete(from sectionDays: [WorkoutDay], at offsets: IndexSet) {
+        pendingDeleteDays = offsets.map { sectionDays[$0] }
+        showingDeleteConfirmation = true
+    }
+
+    private func confirmDelete() {
+        for day in pendingDeleteDays {
+            context.delete(day)
         }
+        pendingDeleteDays = []
         try? context.save()
+    }
+
+    private var deleteConfirmationTitle: String {
+        if pendingDeleteDays.count == 1 {
+            let name = pendingDeleteDays[0].name
+            return "Delete “\(name.isEmpty ? "Workout" : name)”?"
+        }
+        return "Delete \(pendingDeleteDays.count) Workouts?"
     }
 }
 
