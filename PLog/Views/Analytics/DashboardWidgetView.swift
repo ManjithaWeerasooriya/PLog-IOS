@@ -420,35 +420,51 @@ struct DashboardWidgetView: View {
 
     // MARK: - Muscle split
 
-    @ViewBuilder
+    /// Tappable like Best Lifts and Activity: pushes `MuscleGroupsView` at this card's range.
+    /// The range menu in the header still works on its own — a tap on it opens the menu,
+    /// anywhere else on the card navigates.
     private var muscleSplitCard: some View {
         let split = muscleSplit(range)
         let total = split.reduce(0) { $0 + $1.sets }
-        AnalyticsCard {
-            VStack(alignment: .leading, spacing: 12) {
-                trendTitle("Muscle groups", prefix: "Sets")
-                if split.isEmpty {
-                    Text("No sets logged in this range.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                } else if isLarge {
-                    // Large: the donut on top, legend in two columns beneath.
-                    VStack(spacing: 16) {
-                        donut(split, total: total, diameter: 168)
-                        LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible())], spacing: 8) {
-                            legendRows(split, total: total, limit: 6)
+        return NavigationLink(value: ProgressRoute.muscleGroups(range)) {
+            AnalyticsCard {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .top) {
+                        // Small has no room for the "Sets ·" prefix beside the range.
+                        trendTitle("Muscle groups", prefix: layoutSize == .small ? nil : "Sets")
+                        Spacer(minLength: 4)
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    if split.isEmpty {
+                        Text("No sets logged in this range.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    } else if layoutSize == .small {
+                        // Small: the donut alone, its total in the middle.
+                        donut(split, total: total, diameter: 84)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if isLarge {
+                        // Large: the donut on top, legend in two columns beneath.
+                        VStack(spacing: 16) {
+                            donut(split, total: total, diameter: 168)
+                            LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible())], spacing: 8) {
+                                legendRows(split, total: total, limit: 6)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                    } else {
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: 20) { muscleSplitContent(split, total: total) }
+                            VStack(alignment: .leading, spacing: 16) { muscleSplitContent(split, total: total) }
                         }
                     }
-                    .frame(maxWidth: .infinity)
-                } else {
-                    ViewThatFits(in: .horizontal) {
-                        HStack(spacing: 20) { muscleSplitContent(split, total: total) }
-                        VStack(alignment: .leading, spacing: 16) { muscleSplitContent(split, total: total) }
-                    }
                 }
+                .frame(maxHeight: .infinity, alignment: .top)
             }
-            .frame(maxHeight: .infinity, alignment: .top)
         }
+        .buttonStyle(.plain)
     }
 
     /// Wide: a small donut beside the top three groups.
@@ -654,10 +670,7 @@ struct DashboardWidgetView: View {
     }
 
     private func muscleSplit(_ range: AnalyticsRange) -> [WorkoutStats.MuscleGroupShare] {
-        guard let start = weeklySummaries(range).first?.weekStart else { return [] }
-        return WorkoutStats.muscleGroupSplit(
-            workouts: WorkoutStats.workouts(workouts, from: start, before: .distantFuture)
-        )
+        WorkoutStats.muscleGroupSplit(workouts: workouts, weeks: range.weeks, calendar: calendar)
     }
 
     private var bestLifts: [WorkoutStats.ExerciseBest] {

@@ -132,6 +132,21 @@ enum WorkoutStats {
             .sorted { $0.sets > $1.sets }
     }
 
+    /// Sets per muscle group over the last `weeks` weeks ending with the current one — the
+    /// Muscle Groups widget and its detail screen both read this, so their totals agree.
+    static func muscleGroupSplit(
+        workouts: [WorkoutDay],
+        weeks: Int,
+        today: Date = .now,
+        calendar: Calendar = .current
+    ) -> [MuscleGroupShare] {
+        guard
+            let thisWeek = weekStart(of: today, calendar: calendar),
+            let start = calendar.date(byAdding: .weekOfYear, value: -(max(weeks, 1) - 1), to: thisWeek)
+        else { return [] }
+        return muscleGroupSplit(workouts: self.workouts(workouts, from: start, before: .distantFuture))
+    }
+
     /// Consecutive weeks with at least one session, counting back from this week. An empty
     /// current week doesn't break the streak — it isn't over yet — so the count starts from
     /// last week in that case.
@@ -211,5 +226,30 @@ enum WorkoutStats {
 
     static func weekStart(of date: Date, calendar: Calendar = .current) -> Date? {
         calendar.dateInterval(of: .weekOfYear, for: date)?.start
+    }
+}
+
+// MARK: - Hypertrophy volume
+
+/// Weekly working-set targets per muscle group. The one place to change them.
+enum HypertrophyTarget {
+    /// At or above this many working sets a week, a muscle group gets enough volume to grow.
+    static let minimumWeeklySets: Double = 10
+    /// Above this, volume is flagged as high (likely more than can be recovered from).
+    static let highWeeklySets: Double = 30
+
+    enum Status {
+        case below, met, high
+    }
+
+    /// Cardio, Full Body and Other aren't one muscle, so a per-muscle set target means nothing.
+    static func applies(to group: MuscleGroup) -> Bool {
+        group != .cardio && group != .fullBody && group != .other
+    }
+
+    static func status(weeklySets: Double) -> Status {
+        if weeklySets > highWeeklySets { return .high }
+        if weeklySets >= minimumWeeklySets { return .met }
+        return .below
     }
 }

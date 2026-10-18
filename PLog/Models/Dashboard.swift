@@ -135,7 +135,8 @@ enum DashboardWidgetKind: String, CaseIterable, Identifiable {
         case .plan, .bodyWeight: return [.small, .wide]
         case .activity: return [.small, .wide]
         case .totals: return [.small, .wide, .large]
-        case .weekVolume, .weeklyVolume, .sessions, .muscleSplit,
+        case .muscleSplit: return [.small, .wide, .large]
+        case .weekVolume, .weeklyVolume, .sessions,
              .bestLifts, .exerciseProgress, .regressingExercises:
             return [.wide, .large]
         }

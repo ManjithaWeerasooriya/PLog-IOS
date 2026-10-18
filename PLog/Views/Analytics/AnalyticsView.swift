@@ -20,6 +20,8 @@ import UniformTypeIdentifiers
 enum ProgressRoute: Hashable {
     case calendar
     case bestLifts
+    /// Opens on the tapped widget's range, so its totals match the card.
+    case muscleGroups(AnalyticsRange)
 }
 
 /// One grid row: a full-width widget, or one or two small ones (see `DashboardLayout`).
@@ -98,6 +100,8 @@ struct AnalyticsView: View {
                         CalendarView()
                     case .bestLifts:
                         BestLiftsView()
+                    case .muscleGroups(let range):
+                        MuscleGroupsView(range: range)
                     }
                 }
                 // The calendar's session rows push through this stack.
