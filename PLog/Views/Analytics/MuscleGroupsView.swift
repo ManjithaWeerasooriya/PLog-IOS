@@ -134,32 +134,32 @@ struct MuscleGroupsView: View {
         .chartAngleSelection(value: $selectedAngle)
         .frame(width: donutSize, height: donutSize)
         .overlay {
-            VStack(spacing: 2) {
-                if let selected {
-                    Text(selected.group.displayName)
-                        .font(.subheadline.weight(.semibold))
-                    Text(WorkoutStats.setCountString(selected.sets))
-                        .font(.system(.largeTitle, design: .rounded, weight: .bold))
-                        .monospacedDigit()
-                    Text("sets · \(percent(selected.sets, of: total))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text(WorkoutStats.setCountString(total))
-                        .font(.system(.largeTitle, design: .rounded, weight: .bold))
-                        .monospacedDigit()
-                    Text(total == 1 ? "set" : "sets")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+            let hole = donutSize * 0.62
+            if let selected {
+                // One group's weighted share: half-sets from secondary work are meaningful here.
+                DonutCenterLabel(
+                    value: WorkoutStats.setCountString(selected.sets),
+                    caption: "sets · \(percent(selected.sets, of: total))",
+                    title: selected.group.displayName,
+                    holeDiameter: hole,
+                    valueStyle: .largeTitle
+                )
+            } else {
+                // Sets actually done, matching the card's centre (see `workingSetCount`).
+                DonutCenterLabel(
+                    value: WorkoutStats.compactCountString(setsDone),
+                    caption: setsDone == 1 ? "set" : "sets",
+                    holeDiameter: hole,
+                    valueStyle: .largeTitle
+                )
             }
-            .multilineTextAlignment(.center)
-            .frame(width: donutSize * 0.55)
-            .lineLimit(1)
-            .minimumScaleFactor(0.6)
         }
         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-        .accessibilityLabel("Working sets by muscle group, \(WorkoutStats.setCountString(total)) in total")
+        .accessibilityLabel("Working sets by muscle group, \(setsDone) in total")
+    }
+
+    private var setsDone: Int {
+        WorkoutStats.workingSetCount(workouts: workouts, weeks: period.weeks, calendar: calendar)
     }
 
     /// `chartAngleSelection` reports a position along the cumulative set count; find the slice.

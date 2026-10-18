@@ -32,6 +32,7 @@ private struct DashboardRow: Identifiable {
 
 struct AnalyticsView: View {
     @Environment(\.modelContext) private var context
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @Query(sort: \WorkoutDay.date, order: .reverse) private var workouts: [WorkoutDay]
     @Query private var plans: [WorkoutPlan]
@@ -152,29 +153,24 @@ struct AnalyticsView: View {
         .background(Color(uiColor: .systemGroupedBackground))
     }
 
+    /// A row of the grid. Small widgets always get exactly half the width, whatever their content
+    /// would like: `HalfWidthColumns` hands each one the same fixed proposal. This used to be a
+    /// `ViewThatFits { HStack; VStack }`, which judges by *ideal* width and ignores
+    /// `minimumScaleFactor`, so with enough data (a "1,204" or a long label) two smalls silently
+    /// fell back to the stacked form and each rendered full width. Only accessibility type sizes
+    /// stack them now, on purpose.
     @ViewBuilder
     private func gridRow(_ row: DashboardRow) -> some View {
-        if row.widgets.count == 2 {
-            // Two smalls side by side; stacked at accessibility type sizes.
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .top, spacing: 16) {
-                    ForEach(row.widgets) { widgetCell($0) }
-                }
-                // Equal heights when accessibility type sizes let the cells grow.
-                .fixedSize(horizontal: false, vertical: true)
-                VStack(spacing: 16) {
-                    ForEach(row.widgets) { widgetCell($0) }
-                }
+        if let widget = row.widgets.first, row.widgets.count == 1, widget.size != .small {
+            widgetCell(widget)
+        } else if dynamicTypeSize.isAccessibilitySize {
+            VStack(spacing: 16) {
+                ForEach(row.widgets) { widgetCell($0) }
             }
-        } else if let widget = row.widgets.first {
-            if widget.size == .small {
-                // A small widget with no partner keeps its half width.
-                HStack(spacing: 16) {
-                    widgetCell(widget)
-                    Color.clear.frame(maxWidth: .infinity, maxHeight: 0)
-                }
-            } else {
-                widgetCell(widget)
+        } else {
+            // A lone small widget keeps its half; the right column stays empty.
+            HalfWidthColumns(spacing: 16) {
+                ForEach(row.widgets) { widgetCell($0) }
             }
         }
     }
@@ -386,6 +382,36 @@ struct AnalyticsView: View {
 
     private var rows: [DashboardRow] {
         DashboardLayout.rows(widgets).map(DashboardRow.init)
+    }
+}
+
+/// Two equal columns: each subview is proposed exactly half the width (less the gap) and
+/// placed in its column, so a subview's own ideal size can't widen it. The row is as tall as
+/// its tallest subview; with one subview the right column is left empty.
+private struct HalfWidthColumns: Layout {
+    var spacing: CGFloat
+
+    private func columnWidth(_ total: CGFloat) -> CGFloat {
+        max((total - spacing) / 2, 0)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? 0
+        let column = ProposedViewSize(width: columnWidth(width), height: proposal.height)
+        let height = subviews.prefix(2).map { $0.sizeThatFits(column).height }.max() ?? 0
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let width = columnWidth(bounds.width)
+        for (index, subview) in subviews.prefix(2).enumerated() {
+            let x = bounds.minX + CGFloat(index) * (width + spacing)
+            subview.place(
+                at: CGPoint(x: x, y: bounds.minY),
+                anchor: .topLeading,
+                proposal: ProposedViewSize(width: width, height: bounds.height)
+            )
+        }
     }
 }
 

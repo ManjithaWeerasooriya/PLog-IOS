@@ -489,15 +489,17 @@ struct DashboardWidgetView: View {
         .chartLegend(.hidden)
         .frame(width: diameter, height: diameter)
         .overlay {
-            VStack(spacing: 0) {
-                Text(WorkoutStats.setCountString(total))
-                    .font(.title2.bold())
-                    .monospacedDigit()
-                Text("sets")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            // Sets actually done, not the weighted share total (see `workingSetCount`).
+            DonutCenterLabel(
+                value: WorkoutStats.compactCountString(setsDone),
+                caption: setsDone == 1 ? "set" : "sets",
+                holeDiameter: diameter * 0.66
+            )
         }
+    }
+
+    private var setsDone: Int {
+        WorkoutStats.workingSetCount(workouts: workouts, weeks: range.weeks, calendar: calendar)
     }
 
     @ViewBuilder

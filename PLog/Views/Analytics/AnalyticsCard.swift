@@ -99,6 +99,39 @@ struct BigStat: View {
     }
 }
 
+/// The figure inside a donut chart's hole. Sized from the hole, not the text, so a big number
+/// shrinks to fit instead of spilling over the ring: the label gets a square inscribed in the
+/// hole (diameter × 0.7) and scales down to fit it on one line per row.
+struct DonutCenterLabel: View {
+    let value: String
+    var caption: String? = nil
+    var title: String? = nil
+    /// The inner (hole) diameter in points.
+    let holeDiameter: CGFloat
+    var valueStyle: Font.TextStyle = .title2
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if let title {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+            }
+            Text(value)
+                .font(.system(valueStyle, design: .rounded, weight: .bold))
+                .monospacedDigit()
+            if let caption {
+                Text(caption)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .lineLimit(1)
+        .minimumScaleFactor(0.3)
+        .multilineTextAlignment(.center)
+        .frame(width: holeDiameter * 0.7, height: holeDiameter * 0.7)
+    }
+}
+
 /// A ring that fills clockwise from the top, with arbitrary content in the middle.
 struct ProgressRing<Content: View>: View {
     let progress: Double

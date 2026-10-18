@@ -157,11 +157,41 @@ enum WorkoutStats {
         today: Date = .now,
         calendar: Calendar = .current
     ) -> [MuscleGroupShare] {
+        muscleGroupSplit(workouts: self.workouts(workouts, inLastWeeks: weeks, today: today, calendar: calendar))
+    }
+
+    /// Working sets actually performed over the same window as `muscleGroupSplit(workouts:weeks:)`.
+    /// This is the donut's centre figure: the split's shares are weighted (a secondary muscle
+    /// gets half a set), so they sum to more than was done and can end in .5.
+    static func workingSetCount(
+        workouts: [WorkoutDay],
+        weeks: Int,
+        today: Date = .now,
+        calendar: Calendar = .current
+    ) -> Int {
+        self.workouts(workouts, inLastWeeks: weeks, today: today, calendar: calendar)
+            .reduce(0) { $0 + setCount(of: $1) }
+    }
+
+    /// Sessions in the last `weeks` weeks, counting the current one.
+    static func workouts(
+        _ workouts: [WorkoutDay],
+        inLastWeeks weeks: Int,
+        today: Date = .now,
+        calendar: Calendar = .current
+    ) -> [WorkoutDay] {
         guard
             let thisWeek = weekStart(of: today, calendar: calendar),
             let start = calendar.date(byAdding: .weekOfYear, value: -(max(weeks, 1) - 1), to: thisWeek)
         else { return [] }
-        return muscleGroupSplit(workouts: self.workouts(workouts, from: start, before: .distantFuture))
+        return self.workouts(workouts, from: start, before: .distantFuture)
+    }
+
+    /// A whole set count for a headline: "744", "1,204", or "12K" from 10,000 up.
+    static func compactCountString(_ count: Int) -> String {
+        count >= 10_000
+            ? count.formatted(.number.notation(.compactName))
+            : count.formatted(.number.grouping(.automatic))
     }
 
     /// Consecutive weeks with at least one session, counting back from this week. An empty
