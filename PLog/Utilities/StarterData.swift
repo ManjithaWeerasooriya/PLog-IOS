@@ -20,19 +20,33 @@ enum StarterData {
     }
 
     private static func seed(into context: ModelContext) {
-        // Master exercise library, grouped by muscle group.
-        let library: [(String, MuscleGroup)] = [
-            ("Bench Press", .chest), ("Incline Dumbbell Press", .chest), ("Cable Fly", .chest),
-            ("Deadlift", .back), ("Barbell Row", .back), ("Lat Pulldown", .back), ("Seated Cable Row", .back),
-            ("Back Squat", .quads), ("Romanian Deadlift", .hamstrings), ("Leg Press", .quads),
-            ("Leg Curl", .hamstrings), ("Calf Raise", .calves),
-            ("Overhead Press", .shoulders), ("Lateral Raise", .shoulders), ("Face Pull", .rearDelts),
-            ("Bicep Curl", .biceps), ("Hammer Curl", .biceps), ("Tricep Pushdown", .triceps),
-            ("Plank", .core), ("Hanging Leg Raise", .core),
+        // Master exercise library: name, primary groups, secondary groups.
+        let library: [(String, Set<MuscleGroup>, Set<MuscleGroup>)] = [
+            ("Bench Press", [.chest], [.triceps, .shoulders]),
+            ("Incline Dumbbell Press", [.chest], [.shoulders, .triceps]),
+            ("Cable Fly", [.chest], []),
+            ("Deadlift", [.back, .hamstrings], [.glutes, .traps, .forearms]),
+            ("Barbell Row", [.back], [.biceps, .rearDelts]),
+            ("Lat Pulldown", [.back], [.biceps]),
+            ("Seated Cable Row", [.back], [.biceps, .rearDelts]),
+            ("Back Squat", [.quads, .glutes], [.hamstrings, .core]),
+            ("Romanian Deadlift", [.hamstrings], [.glutes, .back]),
+            ("Leg Press", [.quads], [.glutes]),
+            ("Leg Curl", [.hamstrings], []),
+            ("Calf Raise", [.calves], []),
+            ("Overhead Press", [.shoulders], [.triceps]),
+            ("Lateral Raise", [.shoulders], []),
+            ("Face Pull", [.rearDelts], [.traps]),
+            ("Bicep Curl", [.biceps], [.forearms]),
+            ("Hammer Curl", [.biceps], [.forearms]),
+            ("Tricep Pushdown", [.triceps], []),
+            ("Plank", [.core], []),
+            ("Hanging Leg Raise", [.core], []),
         ]
         var exercises: [String: Exercise] = [:]
-        for (name, group) in library {
-            let exercise = Exercise(name: name, category: group)
+        for (name, primary, secondary) in library {
+            let exercise = Exercise(name: name)
+            exercise.setMuscles(primary: primary, secondary: secondary)
             context.insert(exercise)
             exercises[name] = exercise
         }

@@ -16,9 +16,10 @@ import SwiftData
 /// are not stable across stores, so they're never written out.
 nonisolated struct PLogBackup: Codable {
     /// 2 added `SetRecord.isDrop`; 3 added `supersetID` on entries and plan slots; 4 added
-    /// the Progress `dashboard` layout; 5 added each widget's `size`. An older app refuses a
-    /// newer file rather than silently dropping what it can't represent.
-    static let currentVersion = 5
+    /// the Progress `dashboard` layout; 5 added each widget's `size`; 6 added each exercise's
+    /// extra primary and secondary muscle groups. An older app refuses a newer file rather
+    /// than silently dropping what it can't represent.
+    static let currentVersion = 6
 
     var version: Int = PLogBackup.currentVersion
     var exportedAt: Date
@@ -41,6 +42,9 @@ nonisolated struct PLogBackup: Codable {
         var id: UUID
         var name: String
         var category: String
+        /// Absent before version 6 — read as none. Unknown raw values are dropped.
+        var additionalPrimary: [String]?
+        var secondary: [String]?
         var notes: String
         var createdAt: Date
     }
@@ -168,6 +172,8 @@ enum DataBackup {
                     id: id,
                     name: exercise.name,
                     category: exercise.category.rawValue,
+                    additionalPrimary: exercise.additionalPrimaryRawValues,
+                    secondary: exercise.secondaryRawValues,
                     notes: exercise.notes,
                     createdAt: exercise.createdAt
                 )
@@ -297,6 +303,8 @@ enum DataBackup {
                 notes: record.notes,
                 createdAt: record.createdAt
             )
+            exercise.additionalPrimaryRawValues = (record.additionalPrimary ?? []).filter { MuscleGroup(rawValue: $0) != nil }
+            exercise.secondaryRawValues = (record.secondary ?? []).filter { MuscleGroup(rawValue: $0) != nil }
             context.insert(exercise)
             exercisesByID[record.id] = exercise
         }

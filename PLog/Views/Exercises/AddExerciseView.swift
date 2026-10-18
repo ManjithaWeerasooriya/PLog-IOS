@@ -19,7 +19,8 @@ struct AddExerciseView: View {
     let onCreate: ((Exercise) -> Void)?
 
     @State private var name: String
-    @State private var category: MuscleGroup
+    @State private var primary: Set<MuscleGroup>
+    @State private var secondary: Set<MuscleGroup>
     @State private var notes: String
     @State private var confirmingDiscard = false
 
@@ -30,20 +31,24 @@ struct AddExerciseView: View {
     /// confirm before discarding.
     private var hasChanges: Bool {
         guard let exercise else {
-            return !trimmedName.isEmpty || category != .chest || !notes.isEmpty
+            return !trimmedName.isEmpty || primary != [.chest] || !secondary.isEmpty || !notes.isEmpty
         }
-        return name != exercise.name || category != exercise.category || notes != exercise.notes
+        return name != exercise.name
+            || primary != Set(exercise.primaryMuscles)
+            || secondary != Set(exercise.secondaryMuscles)
+            || notes != exercise.notes
     }
 
     /// Seeds the `@State` once, here, rather than in `.onAppear` — `.onAppear` re-fires when
-    /// the "Muscle Group" navigation-link picker is popped back to this screen (the view
-    /// "reappears"), which was stomping the just-picked `category` back to the exercise's
-    /// original stored value before the user ever saw the change stick.
+    /// a pushed Primary/Secondary screen is popped back to this one (the view "reappears"),
+    /// which was stomping the just-picked groups back to the exercise's original stored
+    /// values before the user ever saw the change stick.
     init(exercise: Exercise? = nil, prefilledName: String = "", onCreate: ((Exercise) -> Void)? = nil) {
         self.exercise = exercise
         self.onCreate = onCreate
         _name = State(initialValue: exercise?.name ?? prefilledName)
-        _category = State(initialValue: exercise?.category ?? .chest)
+        _primary = State(initialValue: Set(exercise?.primaryMuscles ?? [.chest]))
+        _secondary = State(initialValue: Set(exercise?.secondaryMuscles ?? []))
         _notes = State(initialValue: exercise?.notes ?? "")
     }
 
@@ -55,18 +60,23 @@ struct AddExerciseView: View {
                         .textInputAutocapitalization(.words)
                 }
 
-                Section("Muscle Group") {
-                    Picker("Category", selection: $category) {
-                        ForEach(MuscleGroup.allCases) { group in
-                            Label {
-                                Text(group.displayName)
-                            } icon: {
-                                MuscleGroupIcon(group)
-                            }
-                            .tag(group)
-                        }
+                Section {
+                    NavigationLink {
+                        MuscleGroupSelectionView(role: .primary, selection: $primary, taken: secondary)
+                    } label: {
+                        LabeledContent("Primary", value: primary.isEmpty ? "None" : MuscleGroup.names(primary))
                     }
-                    .pickerStyle(.navigationLink)
+                    NavigationLink {
+                        MuscleGroupSelectionView(role: .secondary, selection: $secondary, taken: primary)
+                    } label: {
+                        LabeledContent("Secondary", value: secondary.isEmpty ? "None" : MuscleGroup.names(secondary))
+                    }
+                } header: {
+                    Text("Muscle Groups")
+                } footer: {
+                    if primary.isEmpty {
+                        Text("Choose at least one primary muscle group.")
+                    }
                 }
 
                 Section("Notes") {
@@ -88,7 +98,7 @@ struct AddExerciseView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save", action: save)
-                        .disabled(trimmedName.isEmpty)
+                        .disabled(trimmedName.isEmpty || primary.isEmpty)
                 }
             }
             .interactiveDismissDisabled(hasChanges)
@@ -112,12 +122,13 @@ struct AddExerciseView: View {
     private func save() {
         if let exercise {
             exercise.name = trimmedName
-            exercise.category = category
+            exercise.setMuscles(primary: primary, secondary: secondary)
             exercise.notes = notes
             try? context.save()
             onCreate?(exercise)
         } else {
-            let created = Exercise(name: trimmedName, category: category, notes: notes)
+            let created = Exercise(name: trimmedName, notes: notes)
+            created.setMuscles(primary: primary, secondary: secondary)
             context.insert(created)
             try? context.save()
             onCreate?(created)

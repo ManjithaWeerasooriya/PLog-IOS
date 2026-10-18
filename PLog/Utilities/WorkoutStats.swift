@@ -28,8 +28,17 @@ enum WorkoutStats {
 
     struct MuscleGroupShare: Identifiable {
         let group: MuscleGroup
-        let sets: Int
+        /// Weighted: whole sets from primary groups, halves from secondary ones.
+        let sets: Double
         var id: MuscleGroup { group }
+    }
+
+    /// How much one working set counts toward a secondary muscle group.
+    static let secondarySetWeight = 0.5
+
+    /// "12" or "4.5" — a weighted set count with a decimal only when it has a half.
+    static func setCountString(_ sets: Double) -> String {
+        sets == sets.rounded() ? "\(Int(sets))" : String(format: "%.1f", sets)
     }
 
     struct ExerciseBest: Identifiable {
@@ -116,14 +125,22 @@ enum WorkoutStats {
         }
     }
 
-    /// Sets per muscle group across the given sessions, largest first. Entries whose
-    /// exercise was deleted from the library have no category and are skipped.
+    /// Sets per muscle group across the given sessions, largest first. A set counts in full
+    /// for each of its exercise's primary groups and as `secondarySetWeight` for each
+    /// secondary one, so the shares sum to more than the sets actually done. Entries whose
+    /// exercise was deleted from the library have no groups and are skipped.
     static func muscleGroupSplit(workouts: [WorkoutDay]) -> [MuscleGroupShare] {
-        var counts: [MuscleGroup: Int] = [:]
+        var counts: [MuscleGroup: Double] = [:]
         for day in workouts {
             for entry in day.entries {
-                guard let group = entry.exercise?.category else { continue }
-                counts[group, default: 0] += entry.workingSets.count
+                guard let exercise = entry.exercise else { continue }
+                let sets = Double(entry.workingSets.count)
+                for group in exercise.primaryMuscles {
+                    counts[group, default: 0] += sets
+                }
+                for group in exercise.secondaryMuscles {
+                    counts[group, default: 0] += sets * secondarySetWeight
+                }
             }
         }
         return counts

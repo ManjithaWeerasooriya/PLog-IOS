@@ -87,6 +87,8 @@ enum SampleData {
         let row = Exercise(name: "Barbell Row", category: .back)
         let ohp = Exercise(name: "Overhead Press", category: .shoulders)
         let curl = Exercise(name: "Bicep Curl", category: .biceps)
+        bench.setMuscles(primary: [.chest], secondary: [.triceps, .shoulders])
+        squat.setMuscles(primary: [.quads, .glutes], secondary: [.hamstrings])
         [bench, squat, row, ohp, curl].forEach(context.insert)
 
         // An active Push/Pull/Legs plan, started three weeks ago, so the log shows rest days.

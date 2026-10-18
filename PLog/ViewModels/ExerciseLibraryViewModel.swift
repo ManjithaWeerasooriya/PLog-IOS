@@ -25,13 +25,13 @@ final class ExerciseLibraryViewModel {
         let filtered = exercises.filter { exercise in
             let matchesSearch = searchText.isEmpty
                 || exercise.name.localizedCaseInsensitiveContains(searchText)
-            let matchesCategory = categoryFilter == nil || exercise.category == categoryFilter
+            let matchesCategory = categoryFilter.map(exercise.primaryMuscles.contains) ?? true
             return matchesSearch && matchesCategory
         }
 
         return MuscleGroup.allCases.compactMap { group in
             let items = filtered
-                .filter { $0.category == group }
+                .filter { $0.primaryMuscles.contains(group) }
                 .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
             return items.isEmpty ? nil : (group, items)
         }

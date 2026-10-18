@@ -119,6 +119,11 @@ struct ExerciseLibraryView: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(exercise.name)
+                if let muscles = muscleSummary(for: exercise) {
+                    Text(muscles)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 let sessions = exercise.entries.filter { $0.workoutDay != nil }.count
                 Text(sessions == 0 ? "No sessions yet" : "\(sessions) \(sessions == 1 ? "session" : "sessions") logged")
                     .font(.caption)
@@ -126,6 +131,19 @@ struct ExerciseLibraryView: View {
             }
             Spacer()
         }
+    }
+
+    /// "Quads, Glutes · Secondary: Hamstrings" — only for exercises with more than one group,
+    /// so a single-group exercise isn't labelled with its own section's name.
+    private func muscleSummary(for exercise: Exercise) -> String? {
+        let primary = exercise.primaryMuscles
+        let secondary = exercise.secondaryMuscles
+        guard primary.count > 1 || !secondary.isEmpty else { return nil }
+        var parts = [MuscleGroup.names(primary)]
+        if !secondary.isEmpty {
+            parts.append("Secondary: \(MuscleGroup.names(secondary))")
+        }
+        return parts.joined(separator: " · ")
     }
 
     private var categoryMenu: some View {
@@ -168,11 +186,12 @@ struct ExerciseLibraryView: View {
         let filtered = exercises.filter { exercise in
             let matchesSearch = searchText.isEmpty
                 || exercise.name.localizedCaseInsensitiveContains(searchText)
-            let matchesCategory = categoryFilter == nil || exercise.category == categoryFilter
+            let matchesCategory = categoryFilter.map(exercise.primaryMuscles.contains) ?? true
             return matchesSearch && matchesCategory
         }
+        // An exercise appears under every primary group (never a secondary one).
         return MuscleGroup.allCases.compactMap { group in
-            let items = filtered.filter { $0.category == group }
+            let items = filtered.filter { $0.primaryMuscles.contains(group) }
             return items.isEmpty ? nil : (group, items)
         }
     }

@@ -469,14 +469,14 @@ struct DashboardWidgetView: View {
 
     /// Wide: a small donut beside the top three groups.
     @ViewBuilder
-    private func muscleSplitContent(_ split: [WorkoutStats.MuscleGroupShare], total: Int) -> some View {
+    private func muscleSplitContent(_ split: [WorkoutStats.MuscleGroupShare], total: Double) -> some View {
         donut(split, total: total, diameter: 92)
         VStack(alignment: .leading, spacing: 8) {
             legendRows(split, total: total, limit: 3)
         }
     }
 
-    private func donut(_ split: [WorkoutStats.MuscleGroupShare], total: Int, diameter: CGFloat) -> some View {
+    private func donut(_ split: [WorkoutStats.MuscleGroupShare], total: Double, diameter: CGFloat) -> some View {
         Chart(split) { share in
             SectorMark(
                 angle: .value("Sets", share.sets),
@@ -490,7 +490,7 @@ struct DashboardWidgetView: View {
         .frame(width: diameter, height: diameter)
         .overlay {
             VStack(spacing: 0) {
-                Text("\(total)")
+                Text(WorkoutStats.setCountString(total))
                     .font(.title2.bold())
                     .monospacedDigit()
                 Text("sets")
@@ -501,7 +501,7 @@ struct DashboardWidgetView: View {
     }
 
     @ViewBuilder
-    private func legendRows(_ split: [WorkoutStats.MuscleGroupShare], total: Int, limit: Int) -> some View {
+    private func legendRows(_ split: [WorkoutStats.MuscleGroupShare], total: Double, limit: Int) -> some View {
         // With more groups than room, the last slot says how many are left out.
         let shown = split.count > limit ? limit - 1 : limit
         ForEach(split.prefix(shown)) { share in
@@ -511,7 +511,7 @@ struct DashboardWidgetView: View {
                     .font(.subheadline)
                     .lineLimit(1)
                 Spacer()
-                Text("\(Int((Double(share.sets) / Double(max(total, 1)) * 100).rounded()))%")
+                Text("\(Int((share.sets / max(total, 1) * 100).rounded()))%")
                     .font(.subheadline.monospacedDigit())
                     .foregroundStyle(.secondary)
             }

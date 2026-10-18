@@ -53,7 +53,7 @@ struct MuscleGroupsView: View {
 
     @State private var period: MuscleSplitPeriod
     /// The angle value under the user's finger on the donut, from `chartAngleSelection`.
-    @State private var selectedAngle: Int?
+    @State private var selectedAngle: Double?
 
     private let calendar = Calendar.current
 
@@ -117,7 +117,7 @@ struct MuscleGroupsView: View {
 
     // MARK: - Donut
 
-    private func donut(_ split: [WorkoutStats.MuscleGroupShare], total: Int) -> some View {
+    private func donut(_ split: [WorkoutStats.MuscleGroupShare], total: Double) -> some View {
         let selected = selectedShare(in: split)
         return Chart(split) { share in
             SectorMark(
@@ -138,14 +138,14 @@ struct MuscleGroupsView: View {
                 if let selected {
                     Text(selected.group.displayName)
                         .font(.subheadline.weight(.semibold))
-                    Text("\(selected.sets)")
+                    Text(WorkoutStats.setCountString(selected.sets))
                         .font(.system(.largeTitle, design: .rounded, weight: .bold))
                         .monospacedDigit()
                     Text("sets · \(percent(selected.sets, of: total))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
-                    Text("\(total)")
+                    Text(WorkoutStats.setCountString(total))
                         .font(.system(.largeTitle, design: .rounded, weight: .bold))
                         .monospacedDigit()
                     Text(total == 1 ? "set" : "sets")
@@ -159,13 +159,13 @@ struct MuscleGroupsView: View {
             .minimumScaleFactor(0.6)
         }
         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-        .accessibilityLabel("Working sets by muscle group, \(total) in total")
+        .accessibilityLabel("Working sets by muscle group, \(WorkoutStats.setCountString(total)) in total")
     }
 
     /// `chartAngleSelection` reports a position along the cumulative set count; find the slice.
     private func selectedShare(in split: [WorkoutStats.MuscleGroupShare]) -> WorkoutStats.MuscleGroupShare? {
         guard let selectedAngle else { return nil }
-        var running = 0
+        var running = 0.0
         for share in split {
             running += share.sets
             if selectedAngle < running { return share }
@@ -173,7 +173,7 @@ struct MuscleGroupsView: View {
         return split.last
     }
 
-    private func shareRow(_ share: WorkoutStats.MuscleGroupShare, total: Int) -> some View {
+    private func shareRow(_ share: WorkoutStats.MuscleGroupShare, total: Double) -> some View {
         HStack(spacing: 12) {
             Circle()
                 .fill(share.group.color)
@@ -181,7 +181,7 @@ struct MuscleGroupsView: View {
                 .accessibilityHidden(true)
             Text(share.group.displayName)
             Spacer()
-            Text("\(share.sets) set\(share.sets == 1 ? "" : "s")")
+            Text("\(WorkoutStats.setCountString(share.sets)) set\(share.sets == 1 ? "" : "s")")
                 .monospacedDigit()
             Text(percent(share.sets, of: total))
                 .monospacedDigit()
@@ -207,7 +207,7 @@ struct MuscleGroupsView: View {
     /// Full Body, Other) only appear when they have sets, and without a badge.
     private func volumeRows(_ split: [WorkoutStats.MuscleGroupShare]) -> [VolumeRow] {
         let weeks = Double(period.weeks)
-        let trained = split.map { VolumeRow(group: $0.group, weeklySets: Double($0.sets) / weeks) }
+        let trained = split.map { VolumeRow(group: $0.group, weeklySets: $0.sets / weeks) }
         let untrained = MuscleGroup.allCases
             .filter { group in HypertrophyTarget.applies(to: group) && !split.contains { $0.group == group } }
             .map { VolumeRow(group: $0, weeklySets: 0) }
@@ -244,15 +244,15 @@ struct MuscleGroupsView: View {
     private var volumeFooter: String {
         let low = Int(HypertrophyTarget.minimumWeeklySets)
         let high = Int(HypertrophyTarget.highWeeklySets)
-        let base = "Target: \(low)–\(high) working sets per muscle group per week. Drop sets aren't counted."
+        let base = "Target: \(low)–\(high) working sets per muscle group per week. Sets count fully toward an exercise's primary groups and as half a set toward secondary ones. Drop sets aren't counted."
         if period == .thisWeek {
             return base + " This week is still in progress."
         }
         return base + " Weekly figures are averages over \(period.description), including this week so far."
     }
 
-    private func percent(_ part: Int, of total: Int) -> String {
-        "\(Int((Double(part) / Double(max(total, 1)) * 100).rounded()))%"
+    private func percent(_ part: Double, of total: Double) -> String {
+        "\(Int((part / max(total, 1) * 100).rounded()))%"
     }
 }
 

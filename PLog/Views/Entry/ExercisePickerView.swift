@@ -86,7 +86,7 @@ struct ExercisePickerView: View {
 
     private var groupedResults: [(group: MuscleGroup, items: [Exercise])] {
         MuscleGroup.allCases.compactMap { group in
-            let items = filtered.filter { $0.category == group }
+            let items = filtered.filter { $0.primaryMuscles.contains(group) }
             return items.isEmpty ? nil : (group, items)
         }
     }
