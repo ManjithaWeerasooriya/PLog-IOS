@@ -15,7 +15,11 @@ enum MuscleGroup: String, Codable, CaseIterable, Identifiable {
     case chest
     case back
     case legs
+    case hamstrings
+    case glutes
+    case calves
     case shoulders
+    case rearDelts
     /// Raw value kept as "arms" (the case's old name) so any exercise already persisted
     /// with that category still decodes correctly — only the label changed.
     case biceps = "arms"
@@ -35,7 +39,11 @@ enum MuscleGroup: String, Codable, CaseIterable, Identifiable {
         case .chest: return "Chest"
         case .back: return "Back"
         case .legs: return "Legs"
+        case .hamstrings: return "Hamstrings"
+        case .glutes: return "Glutes"
+        case .calves: return "Calves"
         case .shoulders: return "Shoulders"
+        case .rearDelts: return "Rear Delts"
         case .biceps: return "Biceps"
         case .traps: return "Traps"
         case .triceps: return "Triceps"
@@ -47,21 +55,41 @@ enum MuscleGroup: String, Codable, CaseIterable, Identifiable {
         }
     }
 
-    /// SF Symbol used as a lightweight visual tag for the category.
-    var systemImage: String {
+    /// How a group's icon is drawn: an illustration from `Assets.xcassets/MuscleGroups`
+    /// (full colour, so never tinted), or an SF Symbol tinted with `color` (only Other).
+    enum Icon {
+        case illustration(ImageResource)
+        case symbol(String)
+    }
+
+    /// The group's visual tag. Draw it with `MuscleGroupIcon`, or `image` inside a `Menu`.
+    var icon: Icon {
         switch self {
-        case .chest: return "figure.strengthtraining.traditional"
-        case .back: return "figure.rower"
-        case .legs: return "figure.strengthtraining.functional"
-        case .shoulders: return "figure.arms.open"
-        case .biceps: return "dumbbell"
-        case .traps: return "figure.boxing"
-        case .triceps: return "dumbbell.fill"
-        case .forearms: return "hand.raised.fill"
-        case .core: return "figure.core.training"
-        case .cardio: return "figure.run"
-        case .fullBody: return "figure.mixed.cardio"
-        case .other: return "questionmark.circle"
+        case .chest: return .illustration(.muscleChest)
+        case .back: return .illustration(.muscleBack)
+        case .legs: return .illustration(.muscleLegs)
+        case .hamstrings: return .illustration(.muscleHamstrings)
+        case .glutes: return .illustration(.muscleGlutes)
+        case .calves: return .illustration(.muscleCalves)
+        case .shoulders: return .illustration(.muscleShoulders)
+        case .rearDelts: return .illustration(.muscleRearDelts)
+        case .biceps: return .illustration(.muscleBiceps)
+        case .traps: return .illustration(.muscleTraps)
+        case .triceps: return .illustration(.muscleTriceps)
+        case .forearms: return .illustration(.muscleForearms)
+        case .core: return .illustration(.muscleCore)
+        case .cardio: return .illustration(.muscleCardio)
+        case .fullBody: return .illustration(.muscleFullBody)
+        case .other: return .symbol("questionmark.circle")
+        }
+    }
+
+    /// The icon as a plain `Image` at its natural size (illustrations are 28 pt). For `Menu`
+    /// items, which ignore `.resizable()`/`.frame` — everywhere else use `MuscleGroupIcon`.
+    var image: Image {
+        switch icon {
+        case .illustration(let resource): return Image(resource)
+        case .symbol(let name): return Image(systemName: name)
         }
     }
 
@@ -71,7 +99,13 @@ enum MuscleGroup: String, Codable, CaseIterable, Identifiable {
         case .chest: return .red
         case .back: return .blue
         case .legs: return .green
+        // Every system hue is taken, so the split-out groups use asset shades of their
+        // parent's hue (the colour their illustration highlights) that stay distinct in the donut.
+        case .hamstrings: return Color(.muscleColorHamstrings)
+        case .glutes: return Color(.muscleColorGlutes)
+        case .calves: return Color(.muscleColorCalves)
         case .shoulders: return .orange
+        case .rearDelts: return Color(.muscleColorRearDelts)
         case .biceps: return .purple
         case .traps: return .indigo
         case .triceps: return .mint

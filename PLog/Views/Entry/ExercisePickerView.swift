@@ -33,8 +33,7 @@ struct ExercisePickerView: View {
                                     Text(exercise.name)
                                         .foregroundStyle(.primary)
                                     Spacer()
-                                    Image(systemName: exercise.category.systemImage)
-                                        .foregroundStyle(exercise.category.color)
+                                    MuscleGroupIcon(exercise.category)
                                 }
                             }
                         }

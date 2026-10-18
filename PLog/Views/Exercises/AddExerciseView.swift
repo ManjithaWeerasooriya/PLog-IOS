@@ -58,8 +58,12 @@ struct AddExerciseView: View {
                 Section("Muscle Group") {
                     Picker("Category", selection: $category) {
                         ForEach(MuscleGroup.allCases) { group in
-                            Label(group.displayName, systemImage: group.systemImage)
-                                .tag(group)
+                            Label {
+                                Text(group.displayName)
+                            } icon: {
+                                MuscleGroupIcon(group)
+                            }
+                            .tag(group)
                         }
                     }
                     .pickerStyle(.navigationLink)

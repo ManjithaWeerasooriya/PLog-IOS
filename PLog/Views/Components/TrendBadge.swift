@@ -39,8 +39,7 @@ struct CategoryChip: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            Image(systemName: category.systemImage)
-                .foregroundStyle(category.color)
+            MuscleGroupIcon(category, size: 16, relativeTo: .caption)
             Text(category.displayName)
                 .foregroundStyle(.primary)
         }

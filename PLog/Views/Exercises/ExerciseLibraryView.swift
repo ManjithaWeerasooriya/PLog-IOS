@@ -105,7 +105,11 @@ struct ExerciseLibraryView: View {
                         }
                     }
                 } header: {
-                    Label(section.group.displayName, systemImage: section.group.systemImage)
+                    Label {
+                        Text(section.group.displayName)
+                    } icon: {
+                        MuscleGroupIcon(section.group, size: 20, relativeTo: .footnote)
+                    }
                 }
             }
         }
@@ -132,7 +136,11 @@ struct ExerciseLibraryView: View {
                 Button {
                     categoryFilter = group
                 } label: {
-                    Label(group.displayName, systemImage: group.systemImage)
+                    Label {
+                        Text(group.displayName)
+                    } icon: {
+                        group.image
+                    }
                 }
             }
         } label: {

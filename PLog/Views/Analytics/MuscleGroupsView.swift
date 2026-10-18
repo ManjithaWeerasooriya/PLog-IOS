@@ -216,9 +216,7 @@ struct MuscleGroupsView: View {
 
     private func volumeRow(_ row: VolumeRow) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: row.group.systemImage)
-                .foregroundStyle(row.group.color)
-                .frame(width: 24)
+            MuscleGroupIcon(row.group)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.group.displayName)
