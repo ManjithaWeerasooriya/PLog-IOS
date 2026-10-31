@@ -29,6 +29,7 @@ enum StarterData {
             ("Barbell Row", [.back], [.biceps, .rearDelts]),
             ("Lat Pulldown", [.back], [.biceps]),
             ("Seated Cable Row", [.back], [.biceps, .rearDelts]),
+            ("Single-Arm Dumbbell Row", [.back], [.biceps, .rearDelts]),
             ("Back Squat", [.quads, .glutes], [.hamstrings, .core]),
             ("Romanian Deadlift", [.hamstrings], [.glutes, .back]),
             ("Leg Press", [.quads], [.glutes]),
@@ -43,10 +44,15 @@ enum StarterData {
             ("Plank", [.core], []),
             ("Hanging Leg Raise", [.core], []),
         ]
+        // Done one arm at a time; weight is per dumbbell and reps per side.
+        let oneHanded: Set<String> = ["Single-Arm Dumbbell Row"]
         var exercises: [String: Exercise] = [:]
         for (name, primary, secondary) in library {
             let exercise = Exercise(name: name)
             exercise.setMuscles(primary: primary, secondary: secondary)
+            if oneHanded.contains(name) {
+                exercise.defaultHandMode = .single
+            }
             context.insert(exercise)
             exercises[name] = exercise
         }

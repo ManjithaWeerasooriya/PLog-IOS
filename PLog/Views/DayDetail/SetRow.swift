@@ -60,10 +60,20 @@ struct SetRow: View {
         }
     }
 
+    /// Two hands unless the set's exercise is done one hand at a time this session.
+    private var handMode: HandMode { self.set.entry?.handMode ?? .both }
+
     @ViewBuilder
     private var steppers: some View {
-        NumberStepper(title: "Weight", value: $set.weight, step: 2.5, range: 0...500, unit: "kg")
-        NumberStepper(title: "Reps", intValue: $set.reps, range: 0...100)
+        // One hand: the weight is the load in one hand and the reps are per side.
+        NumberStepper(
+            title: handMode == .single ? "Weight · per hand" : "Weight",
+            value: $set.weight, step: 2.5, range: 0...500, unit: "kg"
+        )
+        NumberStepper(
+            title: handMode == .single ? "Reps · per side" : "Reps",
+            intValue: $set.reps, range: 0...100
+        )
     }
 
     @ViewBuilder
@@ -124,7 +134,7 @@ struct SetRow: View {
     }
 
     private var numbers: some View {
-        Text("\(WeightFormatter.string(set.weight)) kg × \(set.reps)")
+        Text("\(WeightFormatter.string(set.weight)) kg × \(set.reps)\(handMode.repSuffix)")
             .font(.subheadline.monospacedDigit())
             .foregroundStyle(.secondary)
             .contentTransition(.numericText())

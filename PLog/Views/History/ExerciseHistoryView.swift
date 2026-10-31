@@ -19,6 +19,21 @@ struct ExerciseHistoryView: View {
 
     var body: some View {
         List {
+            if viewModel.loggedHandModes.count > 1 {
+                Section {
+                    Picker("Hands", selection: $viewModel.handMode) {
+                        ForEach(HandMode.allCases) { mode in
+                            Text(mode.displayName).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                } footer: {
+                    Text(viewModel.handMode == .single
+                         ? "One-hand sessions only. Weights are per hand."
+                         : "Two-hand sessions only.")
+                }
+            }
+
             Section {
                 Picker("Metric", selection: $viewModel.selectedMetric) {
                     ForEach(ExerciseHistoryViewModel.Metric.allCases) { metric in
@@ -93,7 +108,7 @@ struct ExerciseHistoryView: View {
         let unit = viewModel.selectedMetric.unit
         switch viewModel.selectedMetric {
         case .reps:
-            return "\(Int(value)) \(unit)"
+            return "\(Int(value)) \(unit)\(point.handMode.repSuffix)"
         default:
             return "\(WeightFormatter.string(value)) \(unit)"
         }

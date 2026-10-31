@@ -44,7 +44,8 @@ struct ExerciseProgressWidget: View {
 
     @ViewBuilder
     private func content(for exercise: Exercise) -> some View {
-        let points = WorkoutHistory.historyPoints(for: exercise)
+        // The latest session's hand mode only, so a switch doesn't draw as a jump.
+        let points = WorkoutHistory.chartPoints(for: exercise)
         let metric = ExerciseHistoryViewModel.Metric.oneRepMax
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top) {

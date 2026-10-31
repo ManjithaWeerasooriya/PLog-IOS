@@ -24,6 +24,10 @@ final class ExerciseEntry {
     /// Shared by adjacent entries done as a superset (see `Supersets`); `nil` otherwise.
     var supersetID: UUID?
 
+    /// How it was done this session, as a `HandMode` raw value — only sessions done the same
+    /// way are compared. The default reads every entry logged before this existed as two hands.
+    var handModeRawValue: String = HandMode.both.rawValue
+
     /// The sets performed for this exercise on this day.
     ///
     /// Cascade delete: removing the entry removes its sets. Inverse on `SetEntry.entry`.
@@ -34,12 +38,19 @@ final class ExerciseEntry {
         exercise: Exercise? = nil,
         workoutDay: WorkoutDay? = nil,
         order: Int = 0,
-        supersetID: UUID? = nil
+        supersetID: UUID? = nil,
+        handMode: HandMode = .both
     ) {
         self.exercise = exercise
         self.workoutDay = workoutDay
         self.order = order
         self.supersetID = supersetID
+        self.handModeRawValue = handMode.rawValue
+    }
+
+    var handMode: HandMode {
+        get { HandMode(storedValue: handModeRawValue) }
+        set { handModeRawValue = newValue.rawValue }
     }
 
     /// Sets in performed order.

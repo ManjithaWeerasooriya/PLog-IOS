@@ -221,7 +221,7 @@ struct DayDetailView: View {
     /// time, then opens it in place — no second sheet. From "Superset with New Exercise…"
     /// it's linked in straight after its anchor row, and the merged block opens instead.
     private func addExercise(_ exercise: Exercise) {
-        let entry = ExerciseEntry(exercise: exercise, order: day.entries.count)
+        let entry = ExerciseEntry(exercise: exercise, order: day.entries.count, handMode: exercise.defaultHandMode)
         context.insert(entry)
         day.entries.append(entry)
         if let supersetAnchor {

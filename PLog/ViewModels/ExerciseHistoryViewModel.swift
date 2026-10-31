@@ -63,13 +63,26 @@ final class ExerciseHistoryViewModel {
 
     var selectedMetric: Metric = .weight
 
+    /// Which sessions are shown when the exercise has been done both ways. Starts on the way
+    /// it was done most recently.
+    var handMode: HandMode
+
     init(exercise: Exercise) {
         self.exercise = exercise
+        self.handMode = WorkoutHistory.historyPoints(for: exercise).last?.handMode ?? exercise.defaultHandMode
     }
 
-    /// All logged sessions for this exercise, oldest → newest.
+    /// The hand modes the exercise has been logged with; the filter shows only with both.
+    var loggedHandModes: [HandMode] {
+        WorkoutHistory.loggedHandModes(for: exercise)
+    }
+
+    /// Logged sessions done with `handMode`, oldest → newest — one-hand and two-hand weights
+    /// aren't comparable, so they never share a line. With only one mode logged, all of them.
     var points: [ExerciseHistoryPoint] {
-        WorkoutHistory.historyPoints(for: exercise)
+        loggedHandModes.count > 1
+            ? WorkoutHistory.historyPoints(for: exercise, handMode: handMode)
+            : WorkoutHistory.historyPoints(for: exercise)
     }
 
     var hasEnoughDataForChart: Bool { points.count >= 1 }

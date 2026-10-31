@@ -16,23 +16,28 @@ final class ExerciseEntryViewModel {
     /// The entry being edited. Its `SetEntry` objects are edited in place by the steppers.
     let entry: ExerciseEntry
 
-    /// The top set from the previous session — the "Last time" hint, and the fallback
-    /// comparison for a set the previous session didn't have.
-    let previousTopSet: SetSnapshot?
+    /// The top set from the previous session done the same way (one hand or two) — the
+    /// "Last time" hint, and the fallback comparison for a set the previous session didn't have.
+    private(set) var previousTopSet: SetSnapshot?
 
     /// The previous session's sets as working-set groups (each set followed by its drops),
     /// so set *n* is graded against set *n* and a drop against the same drop last time.
-    let previousGroups: [[SetSnapshot]]
+    private(set) var previousGroups: [[SetSnapshot]] = []
 
     private let context: ModelContext
 
     init(entry: ExerciseEntry, context: ModelContext) {
         self.entry = entry
         self.context = context
-        self.previousTopSet = entry.exercise.flatMap {
+        loadHistory()
+    }
+
+    /// Re-reads last time for the entry's current hand mode.
+    private func loadHistory() {
+        previousTopSet = entry.exercise.flatMap {
             WorkoutHistory.previousTopSet(for: $0, excluding: entry)
         }
-        self.previousGroups = entry.exercise.map {
+        previousGroups = entry.exercise.map {
             WorkoutHistory.previousSetGroups(for: $0, excluding: entry)
         } ?? []
     }
@@ -55,10 +60,21 @@ final class ExerciseEntryViewModel {
 
     /// The inline hint string, e.g. "Last time: 62.5 kg × 8".
     var lastTimeLabel: String? {
-        ProgressiveOverload.lastTimeLabel(for: previousTopSet)
+        ProgressiveOverload.lastTimeLabel(for: previousTopSet, handMode: entry.handMode)
     }
 
+    var handMode: HandMode { entry.handMode }
+
     // MARK: - Mutations
+
+    /// Switches between one hand and two. The sets keep their numbers — only what they're
+    /// compared with changes, so trends and "Last time" now come from sessions done this way.
+    func setHandMode(_ mode: HandMode) {
+        guard entry.handMode != mode else { return }
+        entry.handMode = mode
+        loadHistory()
+        try? context.save()
+    }
 
     /// Seeds a brand-new entry with one set prefilled from last time (or sensible defaults)
     /// so the user can immediately nudge the numbers up. Called once, when the exercise is
