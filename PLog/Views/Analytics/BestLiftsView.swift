@@ -68,8 +68,7 @@ private struct BestLiftsContent: View {
     // MARK: - Selected exercise
 
     private func selectedSection(for exercise: Exercise, lifts: [WorkoutStats.ExerciseBest]) -> some View {
-        // The latest session's hand mode only, so a switch doesn't draw as a jump.
-        let points = WorkoutHistory.chartPoints(for: exercise)
+        let points = WorkoutHistory.historyPoints(for: exercise)
         let best = lifts.first { $0.exercise === exercise }
         return Section {
             VStack(alignment: .leading, spacing: 8) {

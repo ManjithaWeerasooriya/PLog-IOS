@@ -54,9 +54,6 @@ struct ExerciseEntryRows: View {
             headerRow
 
             if isExpanded {
-                handModePicker
-                    .moveDisabled(true)
-
                 ForEach(viewModel.sets) { set in
                     SetRow(
                         set: set,
@@ -156,7 +153,6 @@ struct ExerciseEntryRows: View {
                     Label("History", systemImage: "chart.xyaxis.line")
                 }
             }
-            HandModeMenuItem(current: viewModel.handMode, onChange: setHandMode)
             SupersetMenuItems(actions: superset)
             Button(role: .destructive, action: onDelete) {
                 Label("Remove from Day", systemImage: "trash")
@@ -164,32 +160,13 @@ struct ExerciseEntryRows: View {
         }
     }
 
-    /// One hand or two for this session. Switching changes what the sets are compared with,
-    /// not the sets themselves.
-    private var handModePicker: some View {
-        Picker("Hands", selection: Binding(get: { viewModel.handMode }, set: setHandMode)) {
-            ForEach(HandMode.allCases) { mode in
-                Text(mode.displayName).tag(mode)
-            }
-        }
-        .pickerStyle(.segmented)
-        .listRowSeparator(.hidden, edges: .top)
-    }
-
-    private func setHandMode(_ mode: HandMode) {
-        withAnimation(.snappy) { viewModel.setHandMode(mode) }
-    }
-
     private var nameAndChip: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(viewModel.exerciseName)
                 .font(.headline)
                 .foregroundStyle(.primary)
-            HStack(spacing: 6) {
-                if let category = entry.exercise?.category {
-                    CategoryChip(category: category)
-                }
-                HandModeTag(mode: entry.handMode)
+            if let category = entry.exercise?.category {
+                CategoryChip(category: category)
             }
         }
     }

@@ -21,7 +21,6 @@ struct AddExerciseView: View {
     @State private var name: String
     @State private var primary: Set<MuscleGroup>
     @State private var secondary: Set<MuscleGroup>
-    @State private var handMode: HandMode
     @State private var notes: String
     @State private var confirmingDiscard = false
 
@@ -32,13 +31,11 @@ struct AddExerciseView: View {
     /// confirm before discarding.
     private var hasChanges: Bool {
         guard let exercise else {
-            return !trimmedName.isEmpty || primary != [.chest] || !secondary.isEmpty
-                || handMode != .both || !notes.isEmpty
+            return !trimmedName.isEmpty || primary != [.chest] || !secondary.isEmpty || !notes.isEmpty
         }
         return name != exercise.name
             || primary != Set(exercise.primaryMuscles)
             || secondary != Set(exercise.secondaryMuscles)
-            || handMode != exercise.defaultHandMode
             || notes != exercise.notes
     }
 
@@ -52,7 +49,6 @@ struct AddExerciseView: View {
         _name = State(initialValue: exercise?.name ?? prefilledName)
         _primary = State(initialValue: Set(exercise?.primaryMuscles ?? [.chest]))
         _secondary = State(initialValue: Set(exercise?.secondaryMuscles ?? []))
-        _handMode = State(initialValue: exercise?.defaultHandMode ?? .both)
         _notes = State(initialValue: exercise?.notes ?? "")
     }
 
@@ -81,26 +77,6 @@ struct AddExerciseView: View {
                     if primary.isEmpty {
                         Text("Choose at least one primary muscle group.")
                     }
-                }
-
-                Section {
-                    Picker("Usually Done", selection: $handMode) {
-                        ForEach(HandMode.allCases) { mode in
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(mode.displayName)
-                                Text(mode.explanation)
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                            }
-                            .tag(mode)
-                        }
-                    }
-                    .pickerStyle(.inline)
-                    .labelsHidden()
-                } header: {
-                    Text("Usually Done")
-                } footer: {
-                    Text("New sessions and plan slots start with this; you can still switch in a session. Weight is always the load in one hand.")
                 }
 
                 Section("Notes") {
@@ -147,14 +123,12 @@ struct AddExerciseView: View {
         if let exercise {
             exercise.name = trimmedName
             exercise.setMuscles(primary: primary, secondary: secondary)
-            exercise.defaultHandMode = handMode
             exercise.notes = notes
             try? context.save()
             onCreate?(exercise)
         } else {
             let created = Exercise(name: trimmedName, notes: notes)
             created.setMuscles(primary: primary, secondary: secondary)
-            created.defaultHandMode = handMode
             context.insert(created)
             try? context.save()
             onCreate?(created)

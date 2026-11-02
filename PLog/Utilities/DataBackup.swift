@@ -17,10 +17,9 @@ import SwiftData
 nonisolated struct PLogBackup: Codable {
     /// 2 added `SetRecord.isDrop`; 3 added `supersetID` on entries and plan slots; 4 added
     /// the Progress `dashboard` layout; 5 added each widget's `size`; 6 added each exercise's
-    /// extra primary and secondary muscle groups; 7 added one-hand / two-hand modes on
-    /// exercises, plan slots and entries. An older app refuses a newer file rather than
-    /// silently dropping what it can't represent.
-    static let currentVersion = 7
+    /// extra primary and secondary muscle groups. An older app refuses a newer file rather
+    /// than silently dropping what it can't represent.
+    static let currentVersion = 6
 
     var version: Int = PLogBackup.currentVersion
     var exportedAt: Date
@@ -46,8 +45,6 @@ nonisolated struct PLogBackup: Codable {
         /// Absent before version 6 — read as none. Unknown raw values are dropped.
         var additionalPrimary: [String]?
         var secondary: [String]?
-        /// A `HandMode` raw value. Absent before version 7 — and unknown — reads as two hands.
-        var handMode: String?
         var notes: String
         var createdAt: Date
     }
@@ -75,8 +72,6 @@ nonisolated struct PLogBackup: Codable {
         var targetReps: Int
         /// Absent before version 3 — read as not in a superset.
         var supersetID: UUID?
-        /// Absent before version 7 — read as two hands.
-        var handMode: String?
     }
 
     nonisolated struct WorkoutRecord: Codable {
@@ -92,8 +87,6 @@ nonisolated struct PLogBackup: Codable {
         var order: Int
         /// Absent before version 3 — read as not in a superset.
         var supersetID: UUID?
-        /// Absent before version 7 — read as two hands.
-        var handMode: String?
         var sets: [SetRecord]
     }
 
@@ -181,7 +174,6 @@ enum DataBackup {
                     category: exercise.category.rawValue,
                     additionalPrimary: exercise.additionalPrimaryRawValues,
                     secondary: exercise.secondaryRawValues,
-                    handMode: exercise.defaultHandModeRawValue,
                     notes: exercise.notes,
                     createdAt: exercise.createdAt
                 )
@@ -205,8 +197,7 @@ enum DataBackup {
                                     order: slot.order,
                                     targetSets: slot.targetSets,
                                     targetReps: slot.targetReps,
-                                    supersetID: slot.supersetID,
-                                    handMode: slot.handModeRawValue
+                                    supersetID: slot.supersetID
                                 )
                             }
                         )
@@ -224,7 +215,6 @@ enum DataBackup {
                             exerciseID: entry.exercise.flatMap { exerciseIDs[$0.persistentModelID] },
                             order: entry.order,
                             supersetID: entry.supersetID,
-                            handMode: entry.handModeRawValue,
                             sets: entry.orderedSets.map { set in
                                 .init(
                                     setNumber: set.setNumber,
@@ -315,7 +305,6 @@ enum DataBackup {
             )
             exercise.additionalPrimaryRawValues = (record.additionalPrimary ?? []).filter { MuscleGroup(rawValue: $0) != nil }
             exercise.secondaryRawValues = (record.secondary ?? []).filter { MuscleGroup(rawValue: $0) != nil }
-            exercise.defaultHandMode = HandMode(storedValue: record.handMode)
             context.insert(exercise)
             exercisesByID[record.id] = exercise
         }
@@ -343,8 +332,7 @@ enum DataBackup {
                         order: slotRecord.order,
                         targetSets: slotRecord.targetSets,
                         targetReps: slotRecord.targetReps,
-                        supersetID: slotRecord.supersetID,
-                        handMode: HandMode(storedValue: slotRecord.handMode)
+                        supersetID: slotRecord.supersetID
                     )
                     context.insert(slot)
                     day.exercises.append(slot)
@@ -362,8 +350,7 @@ enum DataBackup {
                 let entry = ExerciseEntry(
                     exercise: entryRecord.exerciseID.flatMap { exercisesByID[$0] },
                     order: entryRecord.order,
-                    supersetID: entryRecord.supersetID,
-                    handMode: HandMode(storedValue: entryRecord.handMode)
+                    supersetID: entryRecord.supersetID
                 )
                 context.insert(entry)
                 day.entries.append(entry)

@@ -232,17 +232,16 @@ enum WorkoutStats {
             .map { $0 }
     }
 
-    /// The last session's top set against the one before it done the same way (one hand or
-    /// two), or `nil` when there's no such pair. The one place Best Lifts' arrow and the
-    /// Regressing list get their answer, so they can't disagree.
+    /// The last two sessions' top sets, or `nil` with fewer than two sessions. The one place
+    /// Best Lifts' arrow and the Regressing list get their answer, so they can't disagree.
     static func lastSessionComparison(
         for exercise: Exercise,
         points: [ExerciseHistoryPoint]? = nil
     ) -> SessionComparison? {
         let points = points ?? WorkoutHistory.historyPoints(for: exercise)
-        guard let last = points.last,
-              let previous = points.dropLast().last(where: { $0.handMode == last.handMode })
-        else { return nil }
+        guard points.count >= 2 else { return nil }
+        let last = points[points.count - 1]
+        let previous = points[points.count - 2]
         return SessionComparison(
             exercise: exercise,
             latest: SetSnapshot(weight: last.topWeight, reps: last.topSetReps),

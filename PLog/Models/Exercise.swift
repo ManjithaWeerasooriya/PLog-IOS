@@ -25,10 +25,6 @@ final class Exercise {
     /// Secondary groups, as `MuscleGroup` raw values (same reasoning).
     var secondaryRawValues: [String] = []
 
-    /// How the exercise is usually done, as a `HandMode` raw value. New sessions and plan
-    /// slots start with it. A string with a default so stores from before it existed migrate.
-    var defaultHandModeRawValue: String = HandMode.both.rawValue
-
     /// Optional freeform notes about form cues, machine settings, etc.
     var notes: String
 
@@ -64,11 +60,6 @@ final class Exercise {
 }
 
 extension Exercise {
-    var defaultHandMode: HandMode {
-        get { HandMode(storedValue: defaultHandModeRawValue) }
-        set { defaultHandModeRawValue = newValue.rawValue }
-    }
-
     /// Every primary group, `category` first. The library lists the exercise under each one.
     var primaryMuscles: [MuscleGroup] {
         var groups = [category]

@@ -41,8 +41,7 @@ PLog/                        ← repo root
     │   ├── PlanStatus.swift         ← notStarted / active / ended (nonisolated enum)
     │   ├── UserProfile.swift        ← the user's own details; singleton (ensureExists(in:))
     │   ├── Dashboard.swift          ← Progress layout: Dashboard singleton, DashboardWidget, kinds, sizes, DashboardLayout packing
-    │   ├── Gender.swift              ← plain enum incl. .preferNotToSay, not Optional<Gender>
-    │   └── HandMode.swift            ← two hands / one hand; labels, "/ side" suffix
+    │   └── Gender.swift              ← plain enum incl. .preferNotToSay, not Optional<Gender>
     ├── ViewModels/
     │   ├── ExerciseEntryViewModel.swift   ← per-exercise set list: prefill, duplicate-set, per-set trend
     │   ├── ExerciseHistoryViewModel.swift ← metric picker, chart data, overall trend
@@ -52,7 +51,6 @@ PLog/                        ← repo root
     ├── Views/
     │   ├── Components/
     │   │   ├── MuscleGroupIcon.swift ← a group's illustration/symbol at a Dynamic Type–scaled size
-    │   │   ├── HandModeViews.swift  ← "One hand" tag beside a chip; "Switch to …" menu item
     │   │   ├── NumberStepper.swift  ← ⊖ / number / ⊕ input for weight/reps/sets/age/etc. — see Code Conventions
     │   │   ├── NameEntrySheet.swift ← "name it first" sheet used to create plans and plan days
     │   │   ├── SupersetViews.swift  ← lettered badge, chain, "Superset · n rounds" title, superset menu items
@@ -198,14 +196,6 @@ A drop set is a `SetEntry` with `isDrop = true` that belongs to the nearest **wo
 - **Every mutation ends in `Supersets.normalize`**: a member left alone loses its ID, and a run whose ID an earlier run already uses gets a fresh one (otherwise two supersets would silently merge if they became adjacent). `remove` moves the member out to just *after* its superset so the rest stay together.
 - `WorkoutLogger` copies each slot's `supersetID` onto its entry (then normalizes, since a slot whose exercise was deleted is skipped); `WorkoutPlanViewModel.duplicate` copies it too. IDs only need to be unique within one list. `PLogBackup` version 3 carries `supersetID` on entries and plan slots.
 
-### One hand or two is a per-session mode, and only like is compared with like
-
-`HandMode` (`.both` / `.single`) records whether an exercise was done with both hands together or one at a time (single-arm dumbbell row, one-arm cable work). **The logged weight is always the load in one hand** (one dumbbell, one cable handle) and one-hand reps are per side, shown as "20 kg × 12 / side"; volume stays weight × reps in both modes. It lives in three places, each a raw `String` with a property default (so stores from before it migrate, and an unknown value reads as two hands via `HandMode(storedValue:)`): `Exercise.defaultHandMode` (how it's usually done — "Usually Done" in `AddExerciseView`), `PlanExercise.handMode` (a slot starts from the exercise's default; picker in `PlanExerciseRow`) and `ExerciseEntry.handMode` (how it was done that session — set from the slot by `WorkoutLogger`, from the exercise by `DayDetailView.addExercise`, switched with the segmented control at the top of an expanded exercise or its context menu). It's per entry, not per set: switching mid-exercise is rare and a control on every set was clutter.
-
-- **Comparison is filtered at the source.** `WorkoutHistory.previousEntry` only returns an entry with the same hand mode (the `current` entry's, else the exercise's default), so prefill, "Last time", set-by-set trends and `WorkoutLogger` never mix modes. Switching an entry's mode goes through `ExerciseEntryViewModel.setHandMode`, which reloads its previous sets. `WorkoutStats.lastSessionComparison` compares the latest session with the latest earlier one done the same way.
-- **Charts never draw two modes on one line.** `ExerciseHistoryView` shows a Two Hands | One Hand filter once the exercise has history both ways (opening on the most recent mode); the Exercise Progress widget and Best Lifts chart use `WorkoutHistory.chartPoints`, the latest session's mode only. Best Lifts' ranking still takes the best est. 1RM across both modes.
-- Superset slots in a plan have no hand picker (`PlanSupersetRow`); they take the exercise's default, and the session block's per-exercise submenu can switch it.
-
 ---
 
 ## Architecture
@@ -294,7 +284,7 @@ Every Progress card is a widget: a `DashboardWidget` row (kind, order, `rangeWee
 
 ### First-launch starter data
 
-`PLogApp` calls `StarterData.seedIfNeeded(in:)` right after building the container. It seeds only when there are **zero** `Exercise` rows: a 21-exercise library across all muscle groups (Single-Arm Dumbbell Row defaults to one hand), an active "Push / Pull / Legs" plan (3 days, 5 slots each) and a not-started "Upper / Lower" plan. It never touches a store that already has data. This is distinct from `SampleData`, which is the in-memory preview fixture and also seeds workout history.
+`PLogApp` calls `StarterData.seedIfNeeded(in:)` right after building the container. It seeds only when there are **zero** `Exercise` rows: a 20-exercise library across all muscle groups, an active "Push / Pull / Legs" plan (3 days, 5 slots each) and a not-started "Upper / Lower" plan. It never touches a store that already has data. This is distinct from `SampleData`, which is the in-memory preview fixture and also seeds workout history.
 
 ### Save model: pushed screens autosave, sheets are Cancel/Done
 
@@ -311,7 +301,7 @@ Two lanes, matching how Apple's own apps behave — pick one per screen, never m
 
 ### Data export / import is a JSON snapshot, not the SwiftData store
 
-`DataBackup` (`Utilities/DataBackup.swift`) serialises the whole object graph to one `PLogBackup` JSON document (ISO-8601 dates, pretty-printed) and restores it. Cross-references (`PlanExercise.exercise`, `ExerciseEntry.exercise`, `WorkoutDay.planDay`) are written as **export-time UUIDs** — `PersistentIdentifier` is not stable across stores, so it never appears in the file. `PLogBackup.currentVersion` (7) is stamped into every file; `decode` refuses a newer version with a clear message. Version 4 added the optional `dashboard` widget list (kind raw value, order, range, exercise UUID); a file without it (v1–3) restores the default layout, and a widget kind the build doesn't know is skipped. Version 5 added an optional `size` per widget; a v4 file (or an unknown size) gives each widget its kind's default size. Version 6 added optional `additionalPrimary` / `secondary` muscle-group lists per exercise; a v1–5 file restores each exercise with only its `category`. Version 7 added an optional `handMode` on exercises, plan slots and entries; older files read as two hands. Restore stores the packed order. **Bump the version and add a migration branch in `decode` when a record's shape changes** — don't silently add required fields.
+`DataBackup` (`Utilities/DataBackup.swift`) serialises the whole object graph to one `PLogBackup` JSON document (ISO-8601 dates, pretty-printed) and restores it. Cross-references (`PlanExercise.exercise`, `ExerciseEntry.exercise`, `WorkoutDay.planDay`) are written as **export-time UUIDs** — `PersistentIdentifier` is not stable across stores, so it never appears in the file. `PLogBackup.currentVersion` (6) is stamped into every file; `decode` refuses a newer version with a clear message. Version 4 added the optional `dashboard` widget list (kind raw value, order, range, exercise UUID); a file without it (v1–3) restores the default layout, and a widget kind the build doesn't know is skipped. Version 5 added an optional `size` per widget; a v4 file (or an unknown size) gives each widget its kind's default size. Version 6 added optional `additionalPrimary` / `secondary` muscle-group lists per exercise; a v1–5 file restores each exercise with only its `category`. Restore stores the packed order. **Bump the version and add a migration branch in `decode` when a record's shape changes** — don't silently add required fields.
 
 **Import is replace-all, never merge.** `restore` deletes sessions → plans → exercises (in that order so cascade/nullify rules never leave dangling links), then re-inserts everything appending from the to-many side per the relationship rule above. The `UserProfile` row is updated in place so the singleton guarantee holds. `DataTransferSection` (Settings → Data) parses the picked file first and shows counts in a "Replace All Data?" `.alert` before anything is touched. Enum raw values that no longer decode (`MuscleGroup`, `Gender`) fall back to `.other`/`.female` rather than failing the import.
 

@@ -133,9 +133,6 @@ struct SupersetEntryRows: View {
                             Label("History", systemImage: "chart.xyaxis.line")
                         }
                     }
-                    HandModeMenuItem(current: model.handMode) { mode in
-                        withAnimation(.snappy) { model.setHandMode(mode) }
-                    }
                     Button {
                         onRemoveFromSuperset(model.entry)
                     } label: {
@@ -235,11 +232,11 @@ struct SupersetEntryRows: View {
         }
     }
 
-    /// e.g. "Last time: A 60 kg × 8 · B 20 kg × 10 / side".
+    /// e.g. "Last time: A 60 kg × 8 · B 50 kg × 10".
     private var lastTime: String? {
         let parts = viewModels.enumerated().compactMap { index, model -> String? in
             guard let previous = model.previousTopSet, previous.reps > 0 else { return nil }
-            return "\(Supersets.letter(for: index)) \(WeightFormatter.string(previous.weight)) kg × \(previous.reps)\(model.handMode.repSuffix)"
+            return "\(Supersets.letter(for: index)) \(WeightFormatter.string(previous.weight)) kg × \(previous.reps)"
         }
         return parts.isEmpty ? nil : "Last time: " + parts.joined(separator: " · ")
     }

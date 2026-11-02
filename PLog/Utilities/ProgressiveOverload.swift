@@ -77,12 +77,10 @@ enum ProgressiveOverload {
         return .matched
     }
 
-    /// A short inline hint shown while logging, e.g. "Last time: 60 kg × 8", or for one hand
-    /// "Last time, one hand: 20 kg × 12 / side".
-    static func lastTimeLabel(for snapshot: SetSnapshot?, handMode: HandMode = .both, unit: String = "kg") -> String? {
+    /// A short inline hint shown while logging, e.g. "Last time: 60 kg × 8".
+    static func lastTimeLabel(for snapshot: SetSnapshot?, unit: String = "kg") -> String? {
         guard let snapshot, snapshot.reps > 0 else { return nil }
         let weight = WeightFormatter.string(snapshot.weight)
-        let lead = handMode == .single ? "Last time, \(handMode.phrase)" : "Last time"
-        return "\(lead): \(weight) \(unit) × \(snapshot.reps)\(handMode.repSuffix)"
+        return "Last time: \(weight) \(unit) × \(snapshot.reps)"
     }
 }

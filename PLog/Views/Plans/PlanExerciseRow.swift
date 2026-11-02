@@ -3,8 +3,7 @@
 //  PLog
 //
 //  One exercise slot in a day template: a `DisclosureGroup` whose label shows the "3 × 8"
-//  summary and whose content is the target sets × reps steppers plus a one/two hand
-//  picker — the same system
+//  summary and whose content is the target sets × reps steppers — the same system
 //  expand/collapse as `SetRow`, expansion controlled by the parent so only one slot is
 //  open at a time.
 //
@@ -27,20 +26,12 @@ struct PlanExerciseRow: View {
         DisclosureGroup(isExpanded: $isExpanded) {
             // Side by side, stacked only at accessibility type sizes — see `SetRow` for why
             // this isn't a `ViewThatFits`.
-            VStack(spacing: 12) {
-                Group {
-                    if typeSize.isAccessibilitySize {
-                        VStack(spacing: 16) { steppers }
-                    } else {
-                        HStack(alignment: .top, spacing: 16) { steppers }
-                    }
+            Group {
+                if typeSize.isAccessibilitySize {
+                    VStack(spacing: 16) { steppers }
+                } else {
+                    HStack(alignment: .top, spacing: 16) { steppers }
                 }
-                Picker("Hands", selection: $planExercise.handMode) {
-                    ForEach(HandMode.allCases) { mode in
-                        Text(mode.displayName).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
@@ -54,16 +45,13 @@ struct PlanExerciseRow: View {
                 .contextMenu { SupersetMenuItems(actions: superset) }
                 .supersetAccessibilityActions(superset)
         }
-        .accessibilityHint("Double-tap to edit target sets, reps and hands")
+        .accessibilityHint("Double-tap to edit target sets and reps")
     }
 
     @ViewBuilder
     private var steppers: some View {
         NumberStepper(title: "Sets", intValue: $planExercise.targetSets, range: 1...20)
-        NumberStepper(
-            title: planExercise.handMode == .single ? "Reps · per side" : "Reps",
-            intValue: $planExercise.targetReps, range: 1...100
-        )
+        NumberStepper(title: "Reps", intValue: $planExercise.targetReps, range: 1...100)
     }
 
     private var header: some View {
@@ -88,17 +76,14 @@ struct PlanExerciseRow: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(planExercise.exercise?.name ?? "Exercise")
                 .font(.headline)
-            HStack(spacing: 6) {
-                if let category = planExercise.exercise?.category {
-                    CategoryChip(category: category)
-                }
-                HandModeTag(mode: planExercise.handMode)
+            if let category = planExercise.exercise?.category {
+                CategoryChip(category: category)
             }
         }
     }
 
     private var targets: some View {
-        Text("\(planExercise.targetSets) × \(planExercise.targetReps)\(planExercise.handMode.repSuffix)")
+        Text("\(planExercise.targetSets) × \(planExercise.targetReps)")
             .font(.subheadline.monospacedDigit())
             .foregroundStyle(.secondary)
             .contentTransition(.numericText())
