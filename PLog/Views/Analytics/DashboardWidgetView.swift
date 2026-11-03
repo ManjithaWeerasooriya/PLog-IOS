@@ -29,6 +29,8 @@ struct DashboardWidgetView: View {
     let stats: DashboardStats
     /// For the trend widgets; the others ignore it.
     @Binding var range: AnalyticsRange
+    /// For Muscle Groups, which also offers the current week; the others ignore it.
+    var muscleSplitPeriod: Binding<MuscleSplitPeriod> = .constant(.range(.twelveWeeks))
     /// The grid cell to fill; `nil` uses the kind's default size.
     var size: DashboardWidgetSize? = nil
     /// For Exercise Progress; the others ignore it.
@@ -53,8 +55,10 @@ struct DashboardWidgetView: View {
         size.flatMap { kind.supportedSizes.contains($0) ? $0 : nil } ?? kind.defaultSize
     }
 
+    @Environment(\.dashboardGridUnit) private var widthUnit
+
     private var cellHeight: CGFloat {
-        DashboardGrid.height(of: layoutSize, unit: gridUnit)
+        DashboardGrid.height(of: layoutSize, unit: widthUnit ?? gridUnit)
     }
 
     private var isLarge: Bool { layoutSize == .large }
@@ -220,21 +224,28 @@ struct DashboardWidgetView: View {
     private var smallActivity: some View {
         let cells = stats.thisMonthCells
         let trained = Self.trainedCount(cells)
+        // The count sits in the header beside a trained-day dot: a six-week month of dots
+        // plus a footer line ran taller than a small cell.
         return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text(Date.now.formatted(.dateTime.month(.wide)))
                     .font(.headline)
+                    .minimumScaleFactor(0.8)
                 Spacer(minLength: 4)
+                HStack(spacing: 3) {
+                    Circle()
+                        .fill(Color.accentColor)
+                        .frame(width: 7, height: 7)
+                    Text("\(trained)")
+                        .font(.caption.weight(.semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
                 activityChevron
             }
             .lineLimit(1)
-            ActivityMonthDots(cells: cells)
             Spacer(minLength: 0)
-            Text("\(trained) workout\(trained == 1 ? "" : "s")")
-                .font(.caption)
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+            ActivityMonthDots(cells: cells)
         }
         .frame(maxHeight: .infinity, alignment: .top)
     }
@@ -299,32 +310,49 @@ struct DashboardWidgetView: View {
     /// The range subtitle on a trend card: tap to pick how far back it looks. Each card keeps
     /// its own range (they used to share one picker above them).
     private func rangeMenu(prefix: String? = nil) -> some View {
-        Menu {
-            Picker("Range", selection: $range) {
-                ForEach(AnalyticsRange.allCases) { range in
-                    Text(range.label).tag(range)
+        optionMenu(AnalyticsRange.allCases, selection: $range, label: \.label, prefix: prefix)
+    }
+
+    /// A tappable caption ("Last 12 weeks ⌃⌄") that opens a menu of `options`. Compact enough
+    /// for a small card, so every size gets the same control.
+    private func optionMenu<Option: Hashable & Identifiable>(
+        _ options: [Option],
+        selection: Binding<Option>,
+        label: @escaping (Option) -> String,
+        prefix: String?
+    ) -> some View {
+        let current = label(selection.wrappedValue)
+        return Menu {
+            Picker("Range", selection: selection) {
+                ForEach(options) { option in
+                    Text(label(option)).tag(option)
                 }
             }
         } label: {
             HStack(spacing: 3) {
-                Text(prefix.map { "\($0) · \(range.label.lowercased())" } ?? range.label)
+                Text(prefix.map { "\($0) · \(current.lowercased())" } ?? current)
                 Image(systemName: "chevron.up.chevron.down")
                     .imageScale(.small)
             }
             .font(.caption)
             .foregroundStyle(.secondary)
+            .lineLimit(1)
         }
         .tint(.secondary)
         .accessibilityLabel("Range")
-        .accessibilityValue(range.label)
+        .accessibilityValue(current)
     }
 
-    private func trendTitle(_ title: String, prefix: String? = nil) -> some View {
+    private func trendTitle<Menu: View>(_ title: String, @ViewBuilder menu: () -> Menu) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
                 .font(.headline)
-            rangeMenu(prefix: prefix)
+            menu()
         }
+    }
+
+    private func trendTitle(_ title: String, prefix: String? = nil) -> some View {
+        trendTitle(title) { rangeMenu(prefix: prefix) }
     }
 
     @ViewBuilder
@@ -404,27 +432,33 @@ struct DashboardWidgetView: View {
 
     // MARK: - Muscle split
 
-    /// Tappable like Best Lifts and Activity: pushes `MuscleGroupsView` at this card's range.
-    /// The range menu in the header still works on its own — a tap on it opens the menu,
-    /// anywhere else on the card navigates.
+    /// Tappable like Best Lifts and Activity: pushes `MuscleGroupsView` at this card's period.
+    /// The period menu in the header ("This week" or a range) still works on its own — a tap
+    /// on it opens the menu, anywhere else on the card navigates.
     private var muscleSplitCard: some View {
-        let split = stats.muscleSplit[range] ?? []
+        let period = muscleSplitPeriod.wrappedValue
+        let split = stats.muscleSplit[period] ?? []
         let total = split.reduce(0) { $0 + $1.sets }
-        return NavigationLink(value: ProgressRoute.muscleGroups(range)) {
+        return NavigationLink(value: ProgressRoute.muscleGroups(period)) {
             AnalyticsCard {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(alignment: .top) {
-                        // Small has no room for the "Sets ·" prefix beside the range.
-                        trendTitle("Muscle groups", prefix: layoutSize == .small ? nil : "Sets")
+                        // Small has no room for the "Sets ·" prefix beside the period.
+                        trendTitle("Muscle groups") {
+                            optionMenu(
+                                MuscleSplitPeriod.allCases,
+                                selection: muscleSplitPeriod,
+                                label: \.label,
+                                prefix: layoutSize == .small ? nil : "Sets"
+                            )
+                        }
                         Spacer(minLength: 4)
                         Image(systemName: "chevron.right")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.tertiary)
                     }
                     if split.isEmpty {
-                        Text("No sets logged in this range.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                        emptyMuscleSplit(period)
                     } else if layoutSize == .small {
                         // Small: the donut alone, its total in the middle.
                         donut(split, total: total, diameter: 84)
@@ -483,7 +517,30 @@ struct DashboardWidgetView: View {
     }
 
     private var setsDone: Int {
-        stats.setsDone[range] ?? 0
+        stats.setsDone[muscleSplitPeriod.wrappedValue] ?? 0
+    }
+
+    /// Fills the card so the grid cell keeps its size; one line on small, a hint beside it
+    /// on the bigger sizes.
+    private func emptyMuscleSplit(_ period: MuscleSplitPeriod) -> some View {
+        VStack(spacing: 6) {
+            Image(systemName: "chart.pie")
+                .font(.title2)
+                .foregroundStyle(.tertiary)
+            Text(period == .thisWeek ? "No sets yet this week" : "No sets in this range")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+            if layoutSize != .small {
+                Text(period == .thisWeek
+                     ? "Log a workout and its sets show up here."
+                     : "Pick a longer range, or log a workout.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder

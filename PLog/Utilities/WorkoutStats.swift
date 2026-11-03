@@ -293,6 +293,53 @@ enum WorkoutStats {
             }
     }
 
+    /// A regressing exercise as its detail screen shows it: the comparison, the history
+    /// behind it, and whether the dip is a one-off or a run.
+    struct RegressionDetail: Identifiable {
+        let comparison: SessionComparison
+        /// Oldest first, as `WorkoutHistory.historyPoints` gives them.
+        let points: [ExerciseHistoryPoint]
+        /// Sessions in a row that came in under the one before, counting back from the latest:
+        /// 1 is a one-off dip, 3 is three sessions sliding.
+        let consecutiveDips: Int
+
+        var id: PersistentIdentifier { comparison.id }
+        var exercise: Exercise { comparison.exercise }
+        /// The session compared against — the one before the latest.
+        var previousDate: Date? { points.count >= 2 ? points[points.count - 2].date : nil }
+    }
+
+    /// `regressions` (already in display order) with each exercise's points and dip run.
+    static func regressionDetails(
+        _ regressions: [SessionComparison],
+        points pointsFor: (Exercise) -> [ExerciseHistoryPoint]
+    ) -> [RegressionDetail] {
+        regressions.map { comparison in
+            let points = pointsFor(comparison.exercise)
+            return RegressionDetail(
+                comparison: comparison,
+                points: points,
+                consecutiveDips: consecutiveDips(in: points)
+            )
+        }
+    }
+
+    /// How many sessions in a row, counting back from the latest, came in under the session
+    /// before — judged on top sets by `ProgressiveOverload.trend`, the same comparison the
+    /// Regressing list and Best Lifts' arrows use. 0 when the latest didn't dip.
+    static func consecutiveDips(in points: [ExerciseHistoryPoint]) -> Int {
+        var dips = 0
+        var index = points.count - 1
+        while index > 0 {
+            let latest = SetSnapshot(weight: points[index].topWeight, reps: points[index].topSetReps)
+            let previous = SetSnapshot(weight: points[index - 1].topWeight, reps: points[index - 1].topSetReps)
+            guard ProgressiveOverload.trend(current: latest, previous: previous) == .regressed else { break }
+            dips += 1
+            index -= 1
+        }
+        return dips
+    }
+
     private static func relativeChange(_ comparison: SessionComparison) -> Double {
         comparison.change / max(comparison.previous.estimatedOneRepMax, 1)
     }

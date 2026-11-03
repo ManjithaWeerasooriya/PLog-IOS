@@ -20,8 +20,9 @@ import UniformTypeIdentifiers
 enum ProgressRoute: Hashable {
     case calendar
     case bestLifts
-    /// Opens on the tapped widget's range, so its totals match the card.
-    case muscleGroups(AnalyticsRange)
+    /// Opens on the tapped widget's period, so its totals match the card.
+    case muscleGroups(MuscleSplitPeriod)
+    case regressions
 }
 
 /// When the dashboard's figures need rebuilding. A plain class, not observed: updating it
@@ -75,6 +76,8 @@ struct AnalyticsView: View {
     @State private var statsTracker = StatsTracker()
 
     @ScaledMetric(relativeTo: .body) private var badgeSize = 26
+    /// Carries the Dynamic Type factor into the grid unit.
+    @ScaledMetric(relativeTo: .body) private var gridUnit: CGFloat = DashboardGrid.baseUnit
 
     var body: some View {
         NavigationStack {
@@ -145,8 +148,10 @@ struct AnalyticsView: View {
                         CalendarView()
                     case .bestLifts:
                         BestLiftsView(stats: stats ?? .empty)
-                    case .muscleGroups(let range):
-                        MuscleGroupsView(range: range)
+                    case .muscleGroups(let period):
+                        MuscleGroupsView(period: period)
+                    case .regressions:
+                        RegressionsView(stats: stats ?? .empty)
                     }
                 }
                 // The calendar's session rows push through this stack.
@@ -174,18 +179,26 @@ struct AnalyticsView: View {
     // MARK: - Layout
 
     private var dashboardContent: some View {
-        ScrollView {
-            // 16-pt gaps between cards (8-pt grid); 12 inside them.
-            VStack(spacing: 16) {
-                ForEach(rows) { row in
-                    gridRow(row)
-                        .transition(.scale(scale: 0.85).combined(with: .opacity))
+        // The width sets the row unit (see `DashboardGrid`); it doesn't depend on the cards,
+        // so reading it can't feed back into layout the way measuring a card's height did.
+        GeometryReader { proxy in
+            ScrollView {
+                // 16-pt gaps between cards and at the margins (one `DashboardGrid.spacing`).
+                VStack(spacing: DashboardGrid.spacing) {
+                    ForEach(rows) { row in
+                        gridRow(row)
+                            .transition(.scale(scale: 0.85).combined(with: .opacity))
+                    }
                 }
+                .padding(.horizontal, DashboardGrid.spacing)
+                // Room for the ⊖ badges that overhang the first row.
+                .padding(.top, isEditing ? 12 : 0)
+                .padding(.bottom, 24)
             }
-            .padding(.horizontal)
-            // Room for the ⊖ badges that overhang the first row.
-            .padding(.top, isEditing ? 12 : 0)
-            .padding(.bottom, 24)
+            .environment(
+                \.dashboardGridUnit,
+                DashboardGrid.unit(forWidth: proxy.size.width - 2 * DashboardGrid.spacing, scaledUnit: gridUnit)
+            )
         }
         .overlay {
             if isEditing && widgets.isEmpty {
@@ -210,12 +223,12 @@ struct AnalyticsView: View {
         if let widget = row.widgets.first, row.widgets.count == 1, widget.size != .small {
             widgetCell(widget)
         } else if dynamicTypeSize.isAccessibilitySize {
-            VStack(spacing: 16) {
+            VStack(spacing: DashboardGrid.spacing) {
                 ForEach(row.widgets) { widgetCell($0) }
             }
         } else {
             // A lone small widget keeps its half; the right column stays empty.
-            HalfWidthColumns(spacing: 16) {
+            HalfWidthColumns(spacing: DashboardGrid.spacing) {
                 ForEach(row.widgets) { widgetCell($0) }
             }
         }
@@ -228,6 +241,7 @@ struct AnalyticsView: View {
                 kind: kind,
                 stats: stats ?? .empty,
                 range: rangeBinding(for: widget),
+                muscleSplitPeriod: periodBinding(for: widget),
                 size: widget.size,
                 exercise: widget.exercise
             ) {
@@ -235,12 +249,12 @@ struct AnalyticsView: View {
             }
 
             if isEditing {
-                ZStack {
-                    // The card's own links, menus and buttons sleep while editing; the clear
-                    // layer takes the touches instead, so the drag lifts the whole card.
-                    card.allowsHitTesting(false)
-                    Color.clear.contentShape(Rectangle())
-                }
+                // The card's own links, menus and buttons sleep while editing; the clear layer
+                // takes the touches instead, so the drag lifts the whole card. An overlay, so
+                // it takes the card's size and can never change it.
+                card
+                    .allowsHitTesting(false)
+                    .overlay { Color.clear.contentShape(Rectangle()) }
                 .contentShape(.dragPreview, RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .onDrag {
                     draggedWidget = widget
@@ -388,6 +402,16 @@ struct AnalyticsView: View {
             get: { widget.size },
             set: { newValue in
                 withAnimation(.snappy) { viewModel?.setSize(newValue, for: widget) }
+            }
+        )
+    }
+
+    private func periodBinding(for widget: DashboardWidget) -> Binding<MuscleSplitPeriod> {
+        Binding(
+            get: { widget.muscleSplitPeriod },
+            set: { newValue in
+                withAnimation(.snappy) { widget.muscleSplitPeriod = newValue }
+                try? context.save()
             }
         )
     }

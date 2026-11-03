@@ -21,14 +21,23 @@ struct AnalyticsCard<Content: View>: View {
     }
 
     var body: some View {
-        if let gridHeight {
-            // Exactly the cell's height, so the grid lines up and charts can stretch to fill;
-            // at accessibility type sizes the cell height becomes a minimum and text wins.
-            let exact = !dynamicTypeSize.isAccessibilitySize
+        if let gridHeight, !dynamicTypeSize.isAccessibilitySize {
+            // Exactly the cell's height, so the grid lines up and charts can stretch to fill.
+            // `minHeight: 0` matters: a flexible frame left without a minimum never shrinks
+            // below its content, so a card whose content ran taller than its cell (the small
+            // Activity month did, by 23 pt) grew its background past the cell and spilled
+            // into the gaps, out of line with its neighbour. Anything still too tall is
+            // clipped to the card rather than moving the grid.
             tile
-                .frame(maxWidth: .infinity, minHeight: exact ? nil : gridHeight, maxHeight: .infinity, alignment: .topLeading)
+                .frame(maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .topLeading)
                 .background(background)
-                .frame(height: exact ? gridHeight : nil)
+                .frame(height: gridHeight)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        } else if let gridHeight {
+            // Accessibility type sizes: the cell height becomes a minimum and text wins.
+            tile
+                .frame(maxWidth: .infinity, minHeight: gridHeight, alignment: .topLeading)
+                .background(background)
         } else {
             tile
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -50,7 +59,18 @@ private struct AnalyticsCardHeightKey: EnvironmentKey {
     static let defaultValue: CGFloat? = nil
 }
 
+private struct DashboardGridUnitKey: EnvironmentKey {
+    static let defaultValue: CGFloat? = nil
+}
+
 extension EnvironmentValues {
+    /// The grid's row unit, from its width (`DashboardGrid.unit(forWidth:scaledUnit:)`), set
+    /// by whatever lays cards out; `nil` falls back to the scaled `baseUnit`.
+    var dashboardGridUnit: CGFloat? {
+        get { self[DashboardGridUnitKey.self] }
+        set { self[DashboardGridUnitKey.self] = newValue }
+    }
+
     /// The dashboard grid cell height an `AnalyticsCard` fills; `nil` outside the grid.
     var analyticsCardHeight: CGFloat? {
         get { self[AnalyticsCardHeightKey.self] }

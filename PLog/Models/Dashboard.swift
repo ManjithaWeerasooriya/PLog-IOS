@@ -25,6 +25,62 @@ enum AnalyticsRange: Int, CaseIterable, Identifiable {
     var label: String { "Last \(rawValue) weeks" }
 }
 
+/// The Muscle Groups widget's period, and its detail screen's: the trend ranges plus the
+/// current week alone. "This week" runs from the locale's first weekday (`Calendar.current`),
+/// the same week every weekly figure uses. Stored on the widget as `rangeWeeks` (1 for this
+/// week), so it needs no new field and older layouts and backups read as before.
+enum MuscleSplitPeriod: Hashable, CaseIterable, Identifiable {
+    case thisWeek
+    case range(AnalyticsRange)
+
+    static var allCases: [MuscleSplitPeriod] {
+        [.thisWeek] + AnalyticsRange.allCases.map { .range($0) }
+    }
+
+    var id: Int { weeks }
+
+    /// The period stored as `weeks`; `nil` for a count no period uses.
+    init?(weeks: Int) {
+        if weeks == 1 {
+            self = .thisWeek
+        } else if let range = AnalyticsRange(rawValue: weeks) {
+            self = .range(range)
+        } else {
+            return nil
+        }
+    }
+
+    var weeks: Int {
+        switch self {
+        case .thisWeek: return 1
+        case .range(let range): return range.weeks
+        }
+    }
+
+    /// Segment label; fits four across a phone.
+    var shortLabel: String {
+        switch self {
+        case .thisWeek: return "This Week"
+        case .range(let range): return "\(range.weeks)W"
+        }
+    }
+
+    /// The card's range label, e.g. "This week" or "Last 12 weeks".
+    var label: String {
+        switch self {
+        case .thisWeek: return "This week"
+        case .range(let range): return range.label
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .thisWeek: return "this week"
+        case .range(let range): return range.label.lowercased()
+        }
+    }
+}
+
 /// How much of the dashboard grid a widget covers. The grid is 4 columns wide; a unit row
 /// is as tall as a column is wide, so a small widget is square. Persisted by raw value
 /// (`DashboardWidget.sizeRawValue`), so a rename must keep the old string.
@@ -50,12 +106,23 @@ enum DashboardWidgetSize: String, CaseIterable, Identifiable {
     }
 }
 
-/// The grid's fixed numbers. A row unit is scaled with Dynamic Type by each view that lays
-/// out cards (`@ScaledMetric(relativeTo: .body)` from `baseUnit`), so taller text gets
-/// taller cells; the dashboard and the Add Widget gallery must agree, hence one place.
+/// The grid's numbers. Four columns with `spacing` between them; a row unit is one column's
+/// width, so a small (2×2) cell is square on every phone, then scaled with Dynamic Type
+/// (`@ScaledMetric(relativeTo: .body)` from `baseUnit`, as a factor) so taller text gets
+/// taller cells. The dashboard and the Add Widget gallery must agree, hence one place.
 enum DashboardGrid {
+    /// A column at the default type size on a 402-pt-wide phone; also the fallback unit
+    /// before the grid's width is known.
     static let baseUnit: CGFloat = 80
     static let spacing: CGFloat = 16
+
+    /// The row unit for a grid `width` points wide (inside its margins). `scaledUnit` is
+    /// `baseUnit` after `@ScaledMetric`, which carries the Dynamic Type factor.
+    static func unit(forWidth width: CGFloat, scaledUnit: CGFloat) -> CGFloat {
+        let column = (width - 3 * spacing) / 4
+        guard column > 0 else { return scaledUnit }
+        return column * scaledUnit / baseUnit
+    }
 
     static func height(of size: DashboardWidgetSize, unit: CGFloat) -> CGFloat {
         let rows = CGFloat(size.rows)
@@ -192,7 +259,9 @@ final class DashboardWidget {
     /// Position on the dashboard.
     var order: Int
 
-    /// `AnalyticsRange` weeks for the widgets that have a range; ignored by the rest.
+    /// `AnalyticsRange` weeks for the widgets that have a range; ignored by the rest. Muscle
+    /// Groups also stores 1 here for "this week" (see `muscleSplitPeriod`); `range` reads that
+    /// as the default range.
     var rangeWeeks: Int
 
     /// A `DashboardWidgetSize` raw value. `nil` (every widget saved before sizes existed) or a
@@ -226,6 +295,12 @@ final class DashboardWidget {
     var range: AnalyticsRange {
         get { AnalyticsRange(rawValue: rangeWeeks) ?? .twelveWeeks }
         set { rangeWeeks = newValue.rawValue }
+    }
+
+    /// Muscle Groups' period: one of the ranges, or the current week.
+    var muscleSplitPeriod: MuscleSplitPeriod {
+        get { MuscleSplitPeriod(weeks: rangeWeeks) ?? .range(range) }
+        set { rangeWeeks = newValue.weeks }
     }
 
     var size: DashboardWidgetSize {

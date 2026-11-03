@@ -135,8 +135,10 @@ final class DashboardStatsTests: XCTestCase {
         parts += stats.last7Days.map { "day \($0.volume)" }
         for range in AnalyticsRange.allCases {
             parts += (stats.weekly[range] ?? []).map { "week \($0.sessions)/\($0.sets)/\($0.volume)" }
-            parts += (stats.muscleSplit[range] ?? []).map { "\($0.group.rawValue) \($0.sets)" }.sorted()
-            parts.append("done \(stats.setsDone[range] ?? 0)")
+        }
+        for period in MuscleSplitPeriod.allCases {
+            parts += (stats.muscleSplit[period] ?? []).map { "\($0.group.rawValue) \($0.sets)" }.sorted()
+            parts.append("done \(stats.setsDone[period] ?? 0)")
         }
         parts += stats.bestLifts.map { "\($0.exercise.name) \($0.estimatedOneRepMax) \($0.trend)" }.sorted()
         parts += stats.regressions.map { "\($0.exercise.name) \($0.change)" }.sorted()

@@ -32,8 +32,9 @@ struct DashboardStats {
     var previous7Volume: Double = 0
     /// Keyed by every `AnalyticsRange`, so changing a card's range needs no recompute.
     var weekly: [AnalyticsRange: [WorkoutStats.WeekSummary]] = [:]
-    var muscleSplit: [AnalyticsRange: [WorkoutStats.MuscleGroupShare]] = [:]
-    var setsDone: [AnalyticsRange: Int] = [:]
+    /// Keyed by every `MuscleSplitPeriod` — the ranges plus this week.
+    var muscleSplit: [MuscleSplitPeriod: [WorkoutStats.MuscleGroupShare]] = [:]
+    var setsDone: [MuscleSplitPeriod: Int] = [:]
     /// Every logged exercise, strongest first: the Best Lifts card shows the top few and
     /// `BestLiftsView` ranks them all.
     var bestLifts: [WorkoutStats.ExerciseBest] = []
@@ -89,8 +90,10 @@ struct DashboardStats {
 
         for range in AnalyticsRange.allCases {
             weekly[range] = WorkoutStats.weeklySummaries(sessions: records, weeks: range.weeks, today: today, calendar: calendar)
-            muscleSplit[range] = WorkoutStats.muscleGroupSplit(sessions: records, weeks: range.weeks, today: today, calendar: calendar)
-            setsDone[range] = WorkoutStats.workingSetCount(sessions: records, weeks: range.weeks, today: today, calendar: calendar)
+        }
+        for period in MuscleSplitPeriod.allCases {
+            muscleSplit[period] = WorkoutStats.muscleGroupSplit(sessions: records, weeks: period.weeks, today: today, calendar: calendar)
+            setsDone[period] = WorkoutStats.workingSetCount(sessions: records, weeks: period.weeks, today: today, calendar: calendar)
         }
 
         // Each exercise's points, oldest first — what `WorkoutHistory.historyPoints` gives,
@@ -133,6 +136,11 @@ struct DashboardStats {
                 weeks: WorkoutCalendar.weeks(cells)
             )
         }
+    }
+
+    /// Every regressing exercise with its history and dip run, for the Regressing detail screen.
+    var regressionDetails: [WorkoutStats.RegressionDetail] {
+        WorkoutStats.regressionDetails(regressions) { points(for: $0) }
     }
 
     /// An exercise's progress points, oldest first; empty for one with no history.

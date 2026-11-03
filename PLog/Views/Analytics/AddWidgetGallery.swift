@@ -67,7 +67,7 @@ struct AddWidgetGallery: View {
             VStack(spacing: 10) {
                 ScaledWidgetPreview(
                     width: kind.defaultSize == .small ? compactWidth : cardWidth,
-                    height: DashboardGrid.height(of: kind.defaultSize, unit: gridUnit),
+                    height: DashboardGrid.height(of: kind.defaultSize, unit: previewUnit),
                     scale: scale
                 ) {
                     DashboardWidgetView(
@@ -77,6 +77,7 @@ struct AddWidgetGallery: View {
                         size: kind.defaultSize,
                         exercise: kind.needsExercise ? previewExercise : nil
                     )
+                    .environment(\.dashboardGridUnit, previewUnit)
                 }
                 .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
                 VStack(spacing: 2) {
@@ -99,6 +100,11 @@ struct AddWidgetGallery: View {
     }
 
     // MARK: - Data
+
+    /// The row unit a `cardWidth`-wide grid gets, so a preview is the card at its real size.
+    private var previewUnit: CGFloat {
+        DashboardGrid.unit(forWidth: cardWidth, scaledUnit: gridUnit)
+    }
 
     private var usesSampleData: Bool { data.workouts.isEmpty }
 

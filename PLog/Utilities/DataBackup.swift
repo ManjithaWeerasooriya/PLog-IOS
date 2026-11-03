@@ -104,6 +104,8 @@ nonisolated struct PLogBackup: Codable {
         /// A `DashboardWidgetKind` raw value; kinds this build doesn't know are skipped.
         var kind: String
         var order: Int
+        /// Weeks of the widget's range; 1 is Muscle Groups' "this week" (an older build reads
+        /// that as its default range).
         var rangeWeeks: Int
         var exerciseID: UUID?
         /// A `DashboardWidgetSize` raw value. Absent before version 5 — and an unknown or
@@ -379,6 +381,10 @@ enum DataBackup {
                     size: record.size.flatMap(DashboardWidgetSize.init(rawValue:)),
                     exercise: record.exerciseID.flatMap { exercisesByID[$0] }
                 )
+                // Muscle Groups' "this week" is stored as 1, which isn't an `AnalyticsRange`.
+                if kind == .muscleSplit, let period = MuscleSplitPeriod(weeks: record.rangeWeeks) {
+                    widget.muscleSplitPeriod = period
+                }
                 context.insert(widget)
                 dashboard.widgets.append(widget)
             }
