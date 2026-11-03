@@ -73,6 +73,10 @@ private struct SettingsForm: View {
             }
 
             DataTransferSection()
+
+            #if DEBUG
+            DebugSection()
+            #endif
         }
         .onAppear(perform: seedDefaultsIfNeeded)
     }
@@ -89,6 +93,27 @@ private struct SettingsForm: View {
         Binding(get: { profile.weightKg ?? 70 }, set: { profile.weightKg = $0 })
     }
 }
+
+#if DEBUG
+/// Debug builds only: tools for reproducing performance problems with a long history.
+private struct DebugSection: View {
+    @Environment(\.modelContext) private var context
+    @State private var result: String?
+
+    var body: some View {
+        Section {
+            Button("Generate 2 Years of History") {
+                let added = DebugHistory.generate(in: context)
+                result = added > 0 ? "Added \(added) sessions." : "No plan with days to log from."
+            }
+        } header: {
+            Text("Debug")
+        } footer: {
+            if let result { Text(result) }
+        }
+    }
+}
+#endif
 
 #Preview {
     SettingsView()

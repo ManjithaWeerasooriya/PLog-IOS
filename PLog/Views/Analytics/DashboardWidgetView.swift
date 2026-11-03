@@ -2,16 +2,19 @@
 //  DashboardWidgetView.swift
 //  PLog
 //
-//  One Progress widget, drawn from `DashboardData`. The dashboard and the Add Widget gallery
-//  both render through this view, so a preview in the gallery is the real card, not a mock.
-//  Pure layout over the data it's handed; the host owns queries, persistence and editing.
+//  One Progress widget, drawn from precomputed `DashboardStats`. The dashboard and the Add
+//  Widget gallery both render through this view, so a preview in the gallery is the real
+//  card, not a mock. Pure layout over the figures it's handed: it never reads workouts or
+//  sets in `body` (see `DashboardStats` for why); the host owns queries, persistence and
+//  editing.
 //
 
 import SwiftUI
 import SwiftData
 import Charts
 
-/// Everything the widgets read, queried once by the screen that hosts them.
+/// Everything the widgets' figures come from, queried once by the screen that hosts them
+/// and turned into `DashboardStats`.
 struct DashboardData {
     /// Newest first.
     var workouts: [WorkoutDay]
@@ -23,9 +26,11 @@ struct DashboardData {
 
 struct DashboardWidgetView: View {
     let kind: DashboardWidgetKind
-    let data: DashboardData
+    let stats: DashboardStats
     /// For the trend widgets; the others ignore it.
     @Binding var range: AnalyticsRange
+    /// For Muscle Groups, which also offers the current week; the others ignore it.
+    var muscleSplitPeriod: Binding<MuscleSplitPeriod> = .constant(.range(.twelveWeeks))
     /// The grid cell to fill; `nil` uses the kind's default size.
     var size: DashboardWidgetSize? = nil
     /// For Exercise Progress; the others ignore it.
@@ -41,12 +46,6 @@ struct DashboardWidgetView: View {
     /// One grid row's height. A column is about this wide on a phone, so 2×2 is square.
     @ScaledMetric(relativeTo: .body) private var gridUnit: CGFloat = DashboardGrid.baseUnit
 
-    private let calendar = Calendar.current
-
-    private var workouts: [WorkoutDay] { data.workouts }
-    private var plans: [WorkoutPlan] { data.plans }
-    private var exercises: [Exercise] { data.exercises }
-
     var body: some View {
         content
             .environment(\.analyticsCardHeight, cellHeight)
@@ -56,8 +55,10 @@ struct DashboardWidgetView: View {
         size.flatMap { kind.supportedSizes.contains($0) ? $0 : nil } ?? kind.defaultSize
     }
 
+    @Environment(\.dashboardGridUnit) private var widthUnit
+
     private var cellHeight: CGFloat {
-        DashboardGrid.height(of: layoutSize, unit: gridUnit)
+        DashboardGrid.height(of: layoutSize, unit: widthUnit ?? gridUnit)
     }
 
     private var isLarge: Bool { layoutSize == .large }
@@ -75,12 +76,14 @@ struct DashboardWidgetView: View {
         case .muscleSplit: muscleSplitCard
         case .bestLifts: bestLiftsCard
         case .exerciseProgress:
-            ExerciseProgressWidget(exercise: exercise, size: layoutSize, onChooseExercise: onChooseExercise)
-        case .regressingExercises:
-            RegressingExercisesWidget(
-                regressions: WorkoutStats.regressingExercises(exercises: exercises),
-                size: layoutSize
+            ExerciseProgressWidget(
+                exercise: exercise,
+                points: exercise.map(stats.points(for:)) ?? [],
+                size: layoutSize,
+                onChooseExercise: onChooseExercise
             )
+        case .regressingExercises:
+            RegressingExercisesWidget(regressions: stats.regressions, size: layoutSize)
         }
     }
 
@@ -109,9 +112,9 @@ struct DashboardWidgetView: View {
 
     private var planRing: some View {
         Group {
-            if let plan = activePlan {
-                let done = thisWeek?.sessions ?? 0
-                ProgressRing(progress: Double(done) / Double(max(plan.days.count, 1))) {
+            if let plan = stats.plan {
+                let done = stats.thisWeekSessions
+                ProgressRing(progress: Double(done) / Double(max(plan.dayCount, 1))) {
                     Text("\(done)")
                         .font(.title2.bold())
                         .monospacedDigit()
@@ -128,20 +131,20 @@ struct DashboardWidgetView: View {
 
     @ViewBuilder
     private var planTitle: some View {
-        if let plan = activePlan {
+        if let plan = stats.plan {
             AnalyticsCardTitle(
                 title: plan.name.isEmpty ? "Plan" : plan.name,
-                subtitle: planSubtitle(for: plan, done: thisWeek?.sessions ?? 0, target: max(plan.days.count, 1))
+                subtitle: planSubtitle(for: plan, done: stats.thisWeekSessions, target: max(plan.dayCount, 1))
             )
         } else {
             AnalyticsCardTitle(title: "No active plan", subtitle: "Start one in Plans")
         }
     }
 
-    private func planSubtitle(for plan: WorkoutPlan, done: Int, target: Int) -> String {
+    private func planSubtitle(for plan: DashboardStats.PlanSummary, done: Int, target: Int) -> String {
         var parts = ["\(done) of \(target) this week"]
-        if let next = WorkoutLogger.suggestedNextDay(in: plan), !next.name.isEmpty {
-            parts.append("Next: \(next.name)")
+        if let next = plan.nextDayName, !next.isEmpty {
+            parts.append("Next: \(next)")
         }
         return parts.joined(separator: " · ")
     }
@@ -168,13 +171,13 @@ struct DashboardWidgetView: View {
     }
 
     private var bodyWeightStat: some View {
-        BigStat(value: data.bodyWeightKg.map { WeightFormatter.string($0) } ?? "—", unit: "kg")
+        BigStat(value: stats.bodyWeightKg.map { WeightFormatter.string($0) } ?? "—", unit: "kg")
     }
 
     private var bodyWeightTitle: some View {
         AnalyticsCardTitle(
             title: "Body weight",
-            subtitle: data.bodyWeightKg == nil ? "Set it in Settings" : "From your profile"
+            subtitle: stats.bodyWeightKg == nil ? "Set it in Settings" : "From your profile"
         )
     }
 
@@ -213,35 +216,36 @@ struct DashboardWidgetView: View {
                 activityChevron
             }
             .lineLimit(1)
-            ActivityDotGrid(months: activityMonths, dotSize: 7, spacing: 4)
+            ActivityDotGrid(months: stats.activityMonths, dotSize: 7, spacing: 4)
         }
         .frame(maxHeight: .infinity, alignment: .top)
     }
 
     private var smallActivity: some View {
-        let month = WorkoutCalendar.startOfMonth(.now, calendar: calendar)
-        let cells = WorkoutCalendar.monthCells(
-            for: month,
-            workouts: workouts,
-            historyStart: WorkoutCalendar.historyStart(workouts: workouts, plans: plans, calendar: calendar),
-            calendar: calendar
-        )
-        let trained = cells.compactMap { $0 }.filter { if case .trained = $0.status { return true } else { return false } }.count
+        let cells = stats.thisMonthCells
+        let trained = Self.trainedCount(cells)
+        // The count sits in the header beside a trained-day dot: a six-week month of dots
+        // plus a footer line ran taller than a small cell.
         return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(month.formatted(.dateTime.month(.wide)))
+                Text(Date.now.formatted(.dateTime.month(.wide)))
                     .font(.headline)
+                    .minimumScaleFactor(0.8)
                 Spacer(minLength: 4)
+                HStack(spacing: 3) {
+                    Circle()
+                        .fill(Color.accentColor)
+                        .frame(width: 7, height: 7)
+                    Text("\(trained)")
+                        .font(.caption.weight(.semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
                 activityChevron
             }
             .lineLimit(1)
-            ActivityMonthDots(cells: cells)
             Spacer(minLength: 0)
-            Text("\(trained) workout\(trained == 1 ? "" : "s")")
-                .font(.caption)
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+            ActivityMonthDots(cells: cells)
         }
         .frame(maxHeight: .infinity, alignment: .top)
     }
@@ -254,17 +258,8 @@ struct DashboardWidgetView: View {
 
     private var activityAccessibilityLabel: String {
         if layoutSize == .small {
-            let month = WorkoutCalendar.startOfMonth(.now, calendar: calendar)
-            let trained = WorkoutCalendar.monthCells(
-                for: month,
-                workouts: workouts,
-                historyStart: WorkoutCalendar.historyStart(workouts: workouts, plans: plans, calendar: calendar),
-                calendar: calendar
-            )
-            .compactMap { $0 }
-            .filter { if case .trained = $0.status { return true } else { return false } }
-            .count
-            return "Activity, \(month.formatted(.dateTime.month(.wide))): \(trained) workout\(trained == 1 ? "" : "s")"
+            let trained = Self.trainedCount(stats.thisMonthCells)
+            return "Activity, \(Date.now.formatted(.dateTime.month(.wide))): \(trained) workout\(trained == 1 ? "" : "s")"
         }
         return "Activity, last 3 months: \(recentWorkoutCount) workout\(recentWorkoutCount == 1 ? "" : "s")"
     }
@@ -276,7 +271,7 @@ struct DashboardWidgetView: View {
             VStack(alignment: .leading, spacing: 12) {
                 cardHeader(title: "Volume lifted", subtitle: "Last 7 days") {
                     BigStat(value: WeightFormatter.volumeString(last7Volume), unit: "kg", style: .title)
-                    if let change = WorkoutStats.percentChange(from: previous7Volume, to: last7Volume) {
+                    if let change = WorkoutStats.percentChange(from: stats.previous7Volume, to: last7Volume) {
                         TrendBadge(
                             trend: change > 0.5 ? .improved : (change < -0.5 ? .regressed : .matched),
                             text: "\(change > 0 ? "+" : "")\(Int(change.rounded()))% vs prior week"
@@ -284,7 +279,7 @@ struct DashboardWidgetView: View {
                     }
                 }
 
-                Chart(last7Days) { day in
+                Chart(stats.last7Days) { day in
                     BarMark(
                         x: .value("Day", day.date, unit: .day),
                         y: .value("Volume", day.volume)
@@ -307,7 +302,7 @@ struct DashboardWidgetView: View {
     // MARK: - Totals
 
     private var totalsRow: some View {
-        TotalsWidget(workouts: workouts.count, sets: totalSets, streak: streak, size: layoutSize)
+        TotalsWidget(workouts: stats.workoutCount, sets: stats.totalSets, streak: stats.streak, size: layoutSize)
     }
 
     // MARK: - Trends
@@ -315,32 +310,49 @@ struct DashboardWidgetView: View {
     /// The range subtitle on a trend card: tap to pick how far back it looks. Each card keeps
     /// its own range (they used to share one picker above them).
     private func rangeMenu(prefix: String? = nil) -> some View {
-        Menu {
-            Picker("Range", selection: $range) {
-                ForEach(AnalyticsRange.allCases) { range in
-                    Text(range.label).tag(range)
+        optionMenu(AnalyticsRange.allCases, selection: $range, label: \.label, prefix: prefix)
+    }
+
+    /// A tappable caption ("Last 12 weeks ⌃⌄") that opens a menu of `options`. Compact enough
+    /// for a small card, so every size gets the same control.
+    private func optionMenu<Option: Hashable & Identifiable>(
+        _ options: [Option],
+        selection: Binding<Option>,
+        label: @escaping (Option) -> String,
+        prefix: String?
+    ) -> some View {
+        let current = label(selection.wrappedValue)
+        return Menu {
+            Picker("Range", selection: selection) {
+                ForEach(options) { option in
+                    Text(label(option)).tag(option)
                 }
             }
         } label: {
             HStack(spacing: 3) {
-                Text(prefix.map { "\($0) · \(range.label.lowercased())" } ?? range.label)
+                Text(prefix.map { "\($0) · \(current.lowercased())" } ?? current)
                 Image(systemName: "chevron.up.chevron.down")
                     .imageScale(.small)
             }
             .font(.caption)
             .foregroundStyle(.secondary)
+            .lineLimit(1)
         }
         .tint(.secondary)
         .accessibilityLabel("Range")
-        .accessibilityValue(range.label)
+        .accessibilityValue(current)
     }
 
-    private func trendTitle(_ title: String, prefix: String? = nil) -> some View {
+    private func trendTitle<Menu: View>(_ title: String, @ViewBuilder menu: () -> Menu) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
                 .font(.headline)
-            rangeMenu(prefix: prefix)
+            menu()
         }
+    }
+
+    private func trendTitle(_ title: String, prefix: String? = nil) -> some View {
+        trendTitle(title) { rangeMenu(prefix: prefix) }
     }
 
     @ViewBuilder
@@ -387,7 +399,7 @@ struct DashboardWidgetView: View {
                         .foregroundStyle(Color.accentColor)
                         .cornerRadius(3)
                     }
-                    if let target = activePlan?.days.count, target > 0 {
+                    if let target = stats.plan?.dayCount, target > 0 {
                         RuleMark(y: .value("Plan", target))
                             .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
                             .foregroundStyle(.secondary)
@@ -420,27 +432,33 @@ struct DashboardWidgetView: View {
 
     // MARK: - Muscle split
 
-    /// Tappable like Best Lifts and Activity: pushes `MuscleGroupsView` at this card's range.
-    /// The range menu in the header still works on its own — a tap on it opens the menu,
-    /// anywhere else on the card navigates.
+    /// Tappable like Best Lifts and Activity: pushes `MuscleGroupsView` at this card's period.
+    /// The period menu in the header ("This week" or a range) still works on its own — a tap
+    /// on it opens the menu, anywhere else on the card navigates.
     private var muscleSplitCard: some View {
-        let split = muscleSplit(range)
+        let period = muscleSplitPeriod.wrappedValue
+        let split = stats.muscleSplit[period] ?? []
         let total = split.reduce(0) { $0 + $1.sets }
-        return NavigationLink(value: ProgressRoute.muscleGroups(range)) {
+        return NavigationLink(value: ProgressRoute.muscleGroups(period)) {
             AnalyticsCard {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(alignment: .top) {
-                        // Small has no room for the "Sets ·" prefix beside the range.
-                        trendTitle("Muscle groups", prefix: layoutSize == .small ? nil : "Sets")
+                        // Small has no room for the "Sets ·" prefix beside the period.
+                        trendTitle("Muscle groups") {
+                            optionMenu(
+                                MuscleSplitPeriod.allCases,
+                                selection: muscleSplitPeriod,
+                                label: \.label,
+                                prefix: layoutSize == .small ? nil : "Sets"
+                            )
+                        }
                         Spacer(minLength: 4)
                         Image(systemName: "chevron.right")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.tertiary)
                     }
                     if split.isEmpty {
-                        Text("No sets logged in this range.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                        emptyMuscleSplit(period)
                     } else if layoutSize == .small {
                         // Small: the donut alone, its total in the middle.
                         donut(split, total: total, diameter: 84)
@@ -499,7 +517,30 @@ struct DashboardWidgetView: View {
     }
 
     private var setsDone: Int {
-        WorkoutStats.workingSetCount(workouts: workouts, weeks: range.weeks, calendar: calendar)
+        stats.setsDone[muscleSplitPeriod.wrappedValue] ?? 0
+    }
+
+    /// Fills the card so the grid cell keeps its size; one line on small, a hint beside it
+    /// on the bigger sizes.
+    private func emptyMuscleSplit(_ period: MuscleSplitPeriod) -> some View {
+        VStack(spacing: 6) {
+            Image(systemName: "chart.pie")
+                .font(.title2)
+                .foregroundStyle(.tertiary)
+            Text(period == .thisWeek ? "No sets yet this week" : "No sets in this range")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+            if layoutSize != .small {
+                Text(period == .thisWeek
+                     ? "Log a workout and its sets show up here."
+                     : "Pick a longer range, or log a workout.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder
@@ -563,7 +604,7 @@ struct DashboardWidgetView: View {
 
     /// Tappable like Activity: pushes `BestLiftsView`, which opens on the top lift.
     private var bestLiftsCard: some View {
-        let lifts = Array(bestLifts.prefix(isLarge ? 5 : 2))
+        let lifts = Array(stats.bestLifts.prefix(isLarge ? 5 : 2))
         return NavigationLink(value: ProgressRoute.bestLifts) {
             AnalyticsCard {
                 VStack(alignment: .leading, spacing: 12) {
@@ -618,16 +659,8 @@ struct DashboardWidgetView: View {
 
     // MARK: - Derived data
 
-    private var activePlan: WorkoutPlan? {
-        plans.first(where: \.isActive)
-    }
-
     private func weeklySummaries(_ range: AnalyticsRange) -> [WorkoutStats.WeekSummary] {
-        WorkoutStats.weeklySummaries(workouts: workouts, weeks: range.weeks, calendar: calendar)
-    }
-
-    private var thisWeek: WorkoutStats.WeekSummary? {
-        WorkoutStats.weeklySummaries(workouts: workouts, weeks: 1, calendar: calendar).first
+        stats.weekly[range] ?? []
     }
 
     private func averageWeeklyVolume(_ weekly: [WorkoutStats.WeekSummary]) -> Double {
@@ -642,67 +675,19 @@ struct DashboardWidgetView: View {
 
     private func sessionsAxisMax(_ weekly: [WorkoutStats.WeekSummary]) -> Int {
         let peak = weekly.map(\.sessions).max() ?? 0
-        return max(peak, activePlan?.days.count ?? 0, 1)
-    }
-
-    private var last7Days: [WorkoutStats.DailyVolume] {
-        WorkoutStats.dailyVolumes(workouts: workouts, days: 7, calendar: calendar)
+        return max(peak, stats.plan?.dayCount ?? 0, 1)
     }
 
     private var last7Volume: Double {
-        last7Days.reduce(0) { $0 + $1.volume }
-    }
-
-    private var previous7Volume: Double {
-        let todayStart = calendar.startOfDay(for: .now)
-        guard
-            let end = calendar.date(byAdding: .day, value: -6, to: todayStart),
-            let start = calendar.date(byAdding: .day, value: -7, to: end)
-        else { return 0 }
-        return WorkoutStats.workouts(workouts, from: start, before: end)
-            .reduce(0) { $0 + WorkoutStats.volume(of: $1) }
-    }
-
-    private var totalSets: Int {
-        workouts.reduce(0) { $0 + WorkoutStats.setCount(of: $1) }
-    }
-
-    private var streak: Int {
-        WorkoutStats.weekStreak(workouts: workouts, calendar: calendar)
-    }
-
-    private func muscleSplit(_ range: AnalyticsRange) -> [WorkoutStats.MuscleGroupShare] {
-        WorkoutStats.muscleGroupSplit(workouts: workouts, weeks: range.weeks, calendar: calendar)
-    }
-
-    private var bestLifts: [WorkoutStats.ExerciseBest] {
-        WorkoutStats.bestLifts(exercises: exercises)
-    }
-
-    /// The current month and the two before it, oldest first.
-    private var activityMonths: [ActivityMonth] {
-        let historyStart = WorkoutCalendar.historyStart(workouts: workouts, plans: plans, calendar: calendar)
-        let thisMonth = WorkoutCalendar.startOfMonth(.now, calendar: calendar)
-        return (0..<3).reversed().compactMap { back in
-            guard let month = calendar.date(byAdding: .month, value: -back, to: thisMonth) else { return nil }
-            let cells = WorkoutCalendar.monthCells(
-                for: month,
-                workouts: workouts,
-                historyStart: historyStart,
-                calendar: calendar
-            )
-            return ActivityMonth(
-                id: month,
-                label: month.formatted(.dateTime.month(.abbreviated)),
-                weeks: WorkoutCalendar.weeks(cells)
-            )
-        }
+        stats.last7Days.reduce(0) { $0 + $1.volume }
     }
 
     private var recentWorkoutCount: Int {
-        activityMonths
-            .flatMap(\.weeks)
-            .flatMap { $0 }
+        Self.trainedCount(stats.activityMonths.flatMap(\.weeks).flatMap { $0 })
+    }
+
+    private static func trainedCount(_ cells: [CalendarDayCell?]) -> Int {
+        cells
             .compactMap { $0 }
             .filter { if case .trained = $0.status { return true } else { return false } }
             .count
@@ -710,18 +695,12 @@ struct DashboardWidgetView: View {
 }
 
 #Preview {
-    let context = SampleData.context
-    let data = DashboardData(
-        workouts: (try? context.fetch(FetchDescriptor<WorkoutDay>(sortBy: [SortDescriptor(\.date, order: .reverse)]))) ?? [],
-        plans: (try? context.fetch(FetchDescriptor<WorkoutPlan>())) ?? [],
-        bodyWeightKg: 72,
-        exercises: (try? context.fetch(FetchDescriptor<Exercise>(sortBy: [SortDescriptor(\.name)]))) ?? []
-    )
+    let stats = DashboardStats(data: SampleData.dashboardData)
     return NavigationStack {
         ScrollView {
             VStack(spacing: 16) {
                 ForEach(DashboardWidgetKind.allCases) { kind in
-                    DashboardWidgetView(kind: kind, data: data, range: .constant(.twelveWeeks), exercise: SampleData.benchPress)
+                    DashboardWidgetView(kind: kind, stats: stats, range: .constant(.twelveWeeks), exercise: SampleData.benchPress)
                 }
             }
             .padding()

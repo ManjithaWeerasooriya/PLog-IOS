@@ -5,48 +5,14 @@
 //  Muscle Groups expanded, pushed from its card the way the calendar and Best Lifts are:
 //  a large donut of working sets per muscle group (tap a slice to read it), every group
 //  labelled with its sets and share, then each group's weekly sets against the hypertrophy
-//  target (`HypertrophyTarget`). Opens on the card's range so the totals match it; "This
-//  Week" is offered too. Plain stack content — the owning `NavigationStack` is
+//  target (`HypertrophyTarget`). Opens on the card's period (a range or "This Week") so the
+//  totals match it. Plain stack content — the owning `NavigationStack` is
 //  `AnalyticsView`'s. Totals come from `WorkoutStats.muscleGroupSplit`, the card's own code.
 //
 
 import SwiftUI
 import SwiftData
 import Charts
-
-/// The periods this screen offers: the widget's ranges plus the current week alone.
-enum MuscleSplitPeriod: Hashable, CaseIterable, Identifiable {
-    case thisWeek
-    case range(AnalyticsRange)
-
-    static var allCases: [MuscleSplitPeriod] {
-        [.thisWeek] + AnalyticsRange.allCases.map { .range($0) }
-    }
-
-    var id: Int { weeks }
-
-    var weeks: Int {
-        switch self {
-        case .thisWeek: return 1
-        case .range(let range): return range.weeks
-        }
-    }
-
-    /// Segment label; fits four across a phone.
-    var shortLabel: String {
-        switch self {
-        case .thisWeek: return "This Week"
-        case .range(let range): return "\(range.weeks)W"
-        }
-    }
-
-    var description: String {
-        switch self {
-        case .thisWeek: return "this week"
-        case .range(let range): return range.label.lowercased()
-        }
-    }
-}
 
 struct MuscleGroupsView: View {
     @Query(sort: \WorkoutDay.date, order: .reverse) private var workouts: [WorkoutDay]
@@ -60,8 +26,8 @@ struct MuscleGroupsView: View {
     // A chart, not text: fixed so the legend can sit under it at every type size.
     private let donutSize: CGFloat = 240
 
-    init(range: AnalyticsRange) {
-        _period = State(initialValue: .range(range))
+    init(period: MuscleSplitPeriod) {
+        _period = State(initialValue: period)
     }
 
     var body: some View {
@@ -305,7 +271,7 @@ struct VolumeStatusBadge: View {
 
 #Preview("Light") {
     NavigationStack {
-        MuscleGroupsView(range: .twelveWeeks)
+        MuscleGroupsView(period: .range(.twelveWeeks))
     }
     .modelContainer(SampleData.container)
     .preferredColorScheme(.light)
@@ -313,7 +279,7 @@ struct VolumeStatusBadge: View {
 
 #Preview("Dark") {
     NavigationStack {
-        MuscleGroupsView(range: .twelveWeeks)
+        MuscleGroupsView(period: .range(.twelveWeeks))
     }
     .modelContainer(SampleData.container)
     .preferredColorScheme(.dark)

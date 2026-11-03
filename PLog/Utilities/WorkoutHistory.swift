@@ -30,14 +30,15 @@ enum WorkoutHistory {
         for exercise: Exercise,
         excluding current: ExerciseEntry? = nil
     ) -> ExerciseEntry? {
+        // Newest first by date, then the first with sets — so only the newest entries' sets are
+        // read, not every past session's (that read is the slow part with a long history).
         exercise.entries
-            .filter { entry in
-                entry !== current && entry.workoutDay != nil && !entry.sets.isEmpty
+            .compactMap { entry in
+                entry === current ? nil : entry.workoutDay.map { (entry: entry, date: $0.date) }
             }
-            .sorted { lhs, rhs in
-                (lhs.workoutDay?.date ?? .distantPast) > (rhs.workoutDay?.date ?? .distantPast)
-            }
-            .first
+            .sorted { $0.date > $1.date }
+            .first { !$0.entry.sets.isEmpty }?
+            .entry
     }
 
     /// A snapshot of the top set from the previous session, for prefilling / comparison.
@@ -77,19 +78,6 @@ enum WorkoutHistory {
         exercise.entries
             .filter { $0.workoutDay != nil && !$0.sets.isEmpty }
             .sorted { ($0.workoutDay?.date ?? .distantPast) < ($1.workoutDay?.date ?? .distantPast) }
-            .map { entry in
-                let topSet = entry.sets.max(by: { $0.weight < $1.weight })
-                let bestE1RM = entry.sets
-                    .map { SetSnapshot(weight: $0.weight, reps: $0.reps).estimatedOneRepMax }
-                    .max() ?? 0
-                return ExerciseHistoryPoint(
-                    id: entry.persistentModelID,
-                    date: entry.workoutDay?.date ?? .now,
-                    topWeight: topSet?.weight ?? 0,
-                    topSetReps: topSet?.reps ?? 0,
-                    totalVolume: entry.totalVolume,
-                    estimatedOneRepMax: bestE1RM
-                )
-            }
+            .map { ExerciseHistoryPoint(SessionRecord.Entry($0), date: $0.workoutDay?.date ?? .now) }
     }
 }

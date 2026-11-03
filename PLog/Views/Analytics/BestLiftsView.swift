@@ -6,17 +6,22 @@
 //  the selected exercise's progress on top, and every lift ranked beneath it to pick from —
 //  like picking a date. It opens on the strongest lift, marked "Best". Search finds any
 //  exercise in the library, logged or not. Plain stack content; the `Exercise` destination
-//  behind "Full History" is registered in `AnalyticsView`.
+//  behind "Full History" is registered in `AnalyticsView`. The ranking and charts come from
+//  the dashboard's `DashboardStats`: ranking every exercise's history here cost ~110 ms on
+//  every redraw (each metric tap, each search keystroke) with two years of data.
 //
 
 import SwiftUI
 import SwiftData
 
 struct BestLiftsView: View {
+    /// The dashboard's figures; only `bestLifts` and each exercise's points are read.
+    let stats: DashboardStats
+
     @State private var searchText = ""
 
     var body: some View {
-        BestLiftsContent(searchText: searchText)
+        BestLiftsContent(stats: stats, searchText: searchText)
             // Always showing: finding any exercise is half of what this screen is for.
             .searchable(
                 text: $searchText,
@@ -31,6 +36,7 @@ struct BestLiftsView: View {
 /// Separate from `BestLiftsView` because `isSearching` / `dismissSearch` are only readable
 /// beneath the `.searchable` modifier.
 private struct BestLiftsContent: View {
+    let stats: DashboardStats
     let searchText: String
 
     @Environment(\.isSearching) private var isSearching
@@ -45,7 +51,7 @@ private struct BestLiftsContent: View {
 
     var body: some View {
         // Ranked once per update: every row and the header read it.
-        let lifts = WorkoutStats.bestLifts(exercises: exercises, limit: .max)
+        let lifts = stats.bestLifts
         ScrollViewReader { proxy in
             List {
                 if isSearching {
@@ -68,7 +74,7 @@ private struct BestLiftsContent: View {
     // MARK: - Selected exercise
 
     private func selectedSection(for exercise: Exercise, lifts: [WorkoutStats.ExerciseBest]) -> some View {
-        let points = WorkoutHistory.historyPoints(for: exercise)
+        let points = stats.points(for: exercise)
         let best = lifts.first { $0.exercise === exercise }
         return Section {
             VStack(alignment: .leading, spacing: 8) {
@@ -249,7 +255,7 @@ private extension Double {
 
 #Preview {
     NavigationStack {
-        BestLiftsView()
+        BestLiftsView(stats: DashboardStats(data: SampleData.dashboardData))
             .navigationDestination(for: Exercise.self) { exercise in
                 ExerciseHistoryView(exercise: exercise)
             }

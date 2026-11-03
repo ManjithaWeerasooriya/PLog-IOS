@@ -20,8 +20,28 @@ import UniformTypeIdentifiers
 enum ProgressRoute: Hashable {
     case calendar
     case bestLifts
-    /// Opens on the tapped widget's range, so its totals match the card.
-    case muscleGroups(AnalyticsRange)
+    /// Opens on the tapped widget's period, so its totals match the card.
+    case muscleGroups(MuscleSplitPeriod)
+    case regressions
+}
+
+/// When the dashboard's figures need rebuilding. A plain class, not observed: updating it
+/// from a save notification must not redraw the dashboard.
+@MainActor
+private final class StatsTracker {
+    var isVisible = false
+    /// Starts stale so the first appearance builds the figures.
+    var isStale = true
+    var pending: Task<Void, Never>?
+    /// The sessions as plain values between rebuilds; a save re-reads only what it touched.
+    let records = SessionRecordCache()
+
+    /// The figures hold `Exercise`s (Best Lifts, Regressing) that the cards read even off
+    /// screen, so a save that deletes one has to rebuild them before the next redraw does.
+    static func deletesExercise(_ note: Notification) -> Bool {
+        let deleted = note.userInfo?[ModelContext.NotificationKey.deletedIdentifiers.rawValue] as? [PersistentIdentifier]
+        return deleted?.contains { $0.entityName == "Exercise" } ?? false
+    }
 }
 
 /// One grid row: a full-width widget, or one or two small ones (see `DashboardLayout`).
@@ -48,8 +68,16 @@ struct AnalyticsView: View {
     @State private var draggedWidget: DashboardWidget?
     /// Bumped on every removal, to drive the haptic.
     @State private var removals = 0
+    /// The widgets' figures. Built outside `body` and only when the data has changed, so a
+    /// stepper tap on the session screen doesn't recompute the dashboard behind it — see
+    /// `DashboardStats`. `nil` until the first appearance builds it, so the cards never
+    /// draw a frame of zeros.
+    @State private var stats: DashboardStats?
+    @State private var statsTracker = StatsTracker()
 
     @ScaledMetric(relativeTo: .body) private var badgeSize = 26
+    /// Carries the Dynamic Type factor into the grid unit.
+    @ScaledMetric(relativeTo: .body) private var gridUnit: CGFloat = DashboardGrid.baseUnit
 
     var body: some View {
         NavigationStack {
@@ -65,7 +93,26 @@ struct AnalyticsView: View {
                 .toolbar(isEditing ? .hidden : .visible, for: .tabBar)
                 // Never leave the tab bar hidden behind: leaving the tab (or anything that
                 // takes this screen away) ends editing.
-                .onDisappear { if isEditing { setEditing(false) } }
+                .onDisappear {
+                    statsTracker.isVisible = false
+                    if isEditing { setEditing(false) }
+                }
+                .onAppear {
+                    statsTracker.isVisible = true
+                    // Unsaved edits (a set changed just before switching tabs) only reach the
+                    // record cache through a save.
+                    if context.hasChanges { try? context.save() }
+                    if statsTracker.isStale { refreshStats() }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave)) { note in
+                    guard statsTracker.records.noteSave(note, in: context) else { return }
+                    statsTracker.isStale = true
+                    if stats != nil, StatsTracker.deletesExercise(note) {
+                        refreshStats()
+                    } else if statsTracker.isVisible {
+                        scheduleStatsRefresh()
+                    }
+                }
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
                         Button { setEditing(true) } label: {
@@ -79,7 +126,7 @@ struct AnalyticsView: View {
                     if isEditing { editBar }
                 }
                 .sheet(isPresented: $showingAddWidget) {
-                    AddWidgetGallery(data: data, canAdd: { viewModel?.canAdd($0) ?? false }) { kind, exercise in
+                    AddWidgetGallery(data: data, stats: stats ?? .empty, canAdd: { viewModel?.canAdd($0) ?? false }) { kind, exercise in
                         withAnimation(.snappy) { viewModel?.add(kind, exercise: exercise) }
                     }
                 }
@@ -100,9 +147,11 @@ struct AnalyticsView: View {
                     case .calendar:
                         CalendarView()
                     case .bestLifts:
-                        BestLiftsView()
-                    case .muscleGroups(let range):
-                        MuscleGroupsView(range: range)
+                        BestLiftsView(stats: stats ?? .empty)
+                    case .muscleGroups(let period):
+                        MuscleGroupsView(period: period)
+                    case .regressions:
+                        RegressionsView(stats: stats ?? .empty)
                     }
                 }
                 // The calendar's session rows push through this stack.
@@ -120,26 +169,36 @@ struct AnalyticsView: View {
             emptyState
         } else if !isEditing && widgets.isEmpty {
             noWidgetsState
-        } else {
+        } else if stats != nil {
             dashboardContent
+        } else {
+            Color.clear
         }
     }
 
     // MARK: - Layout
 
     private var dashboardContent: some View {
-        ScrollView {
-            // 16-pt gaps between cards (8-pt grid); 12 inside them.
-            VStack(spacing: 16) {
-                ForEach(rows) { row in
-                    gridRow(row)
-                        .transition(.scale(scale: 0.85).combined(with: .opacity))
+        // The width sets the row unit (see `DashboardGrid`); it doesn't depend on the cards,
+        // so reading it can't feed back into layout the way measuring a card's height did.
+        GeometryReader { proxy in
+            ScrollView {
+                // 16-pt gaps between cards and at the margins (one `DashboardGrid.spacing`).
+                VStack(spacing: DashboardGrid.spacing) {
+                    ForEach(rows) { row in
+                        gridRow(row)
+                            .transition(.scale(scale: 0.85).combined(with: .opacity))
+                    }
                 }
+                .padding(.horizontal, DashboardGrid.spacing)
+                // Room for the ⊖ badges that overhang the first row.
+                .padding(.top, isEditing ? 12 : 0)
+                .padding(.bottom, 24)
             }
-            .padding(.horizontal)
-            // Room for the ⊖ badges that overhang the first row.
-            .padding(.top, isEditing ? 12 : 0)
-            .padding(.bottom, 24)
+            .environment(
+                \.dashboardGridUnit,
+                DashboardGrid.unit(forWidth: proxy.size.width - 2 * DashboardGrid.spacing, scaledUnit: gridUnit)
+            )
         }
         .overlay {
             if isEditing && widgets.isEmpty {
@@ -164,12 +223,12 @@ struct AnalyticsView: View {
         if let widget = row.widgets.first, row.widgets.count == 1, widget.size != .small {
             widgetCell(widget)
         } else if dynamicTypeSize.isAccessibilitySize {
-            VStack(spacing: 16) {
+            VStack(spacing: DashboardGrid.spacing) {
                 ForEach(row.widgets) { widgetCell($0) }
             }
         } else {
             // A lone small widget keeps its half; the right column stays empty.
-            HalfWidthColumns(spacing: 16) {
+            HalfWidthColumns(spacing: DashboardGrid.spacing) {
                 ForEach(row.widgets) { widgetCell($0) }
             }
         }
@@ -180,8 +239,9 @@ struct AnalyticsView: View {
         if let kind = widget.kind {
             let card = DashboardWidgetView(
                 kind: kind,
-                data: data,
+                stats: stats ?? .empty,
                 range: rangeBinding(for: widget),
+                muscleSplitPeriod: periodBinding(for: widget),
                 size: widget.size,
                 exercise: widget.exercise
             ) {
@@ -189,12 +249,12 @@ struct AnalyticsView: View {
             }
 
             if isEditing {
-                ZStack {
-                    // The card's own links, menus and buttons sleep while editing; the clear
-                    // layer takes the touches instead, so the drag lifts the whole card.
-                    card.allowsHitTesting(false)
-                    Color.clear.contentShape(Rectangle())
-                }
+                // The card's own links, menus and buttons sleep while editing; the clear layer
+                // takes the touches instead, so the drag lifts the whole card. An overlay, so
+                // it takes the card's size and can never change it.
+                card
+                    .allowsHitTesting(false)
+                    .overlay { Color.clear.contentShape(Rectangle()) }
                 .contentShape(.dragPreview, RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .onDrag {
                     draggedWidget = widget
@@ -346,6 +406,16 @@ struct AnalyticsView: View {
         )
     }
 
+    private func periodBinding(for widget: DashboardWidget) -> Binding<MuscleSplitPeriod> {
+        Binding(
+            get: { widget.muscleSplitPeriod },
+            set: { newValue in
+                withAnimation(.snappy) { widget.muscleSplitPeriod = newValue }
+                try? context.save()
+            }
+        )
+    }
+
     private func rangeBinding(for widget: DashboardWidget) -> Binding<AnalyticsRange> {
         Binding(
             get: { widget.range },
@@ -365,6 +435,22 @@ struct AnalyticsView: View {
     /// by the tab bar with no context to hand it.
     private var viewModel: DashboardViewModel? {
         dashboard.map { DashboardViewModel(dashboard: $0, context: context) }
+    }
+
+    private func refreshStats() {
+        statsTracker.pending?.cancel()
+        statsTracker.isStale = false
+        stats = DashboardStats(data: data, records: statsTracker.records.records(for: workouts))
+    }
+
+    /// Coalesces a burst of saves into one rebuild.
+    private func scheduleStatsRefresh() {
+        statsTracker.pending?.cancel()
+        statsTracker.pending = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            refreshStats()
+        }
     }
 
     private var data: DashboardData {
