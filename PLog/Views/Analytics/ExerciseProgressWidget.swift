@@ -12,6 +12,9 @@ import SwiftData
 
 struct ExerciseProgressWidget: View {
     let exercise: Exercise?
+    /// The exercise's progress points, precomputed by the host (see `DashboardStats`) so
+    /// this card's `body` never walks the exercise's sets.
+    let points: [ExerciseHistoryPoint]
     var size: DashboardWidgetSize = .wide
     var onChooseExercise: () -> Void
 
@@ -44,7 +47,6 @@ struct ExerciseProgressWidget: View {
 
     @ViewBuilder
     private func content(for exercise: Exercise) -> some View {
-        let points = WorkoutHistory.historyPoints(for: exercise)
         let metric = ExerciseHistoryViewModel.Metric.oneRepMax
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top) {
@@ -99,8 +101,12 @@ struct ExerciseProgressWidget: View {
     NavigationStack {
         ScrollView {
             VStack(spacing: 16) {
-                ExerciseProgressWidget(exercise: SampleData.benchPress, onChooseExercise: {})
-                ExerciseProgressWidget(exercise: nil, onChooseExercise: {})
+                ExerciseProgressWidget(
+                    exercise: SampleData.benchPress,
+                    points: WorkoutHistory.historyPoints(for: SampleData.benchPress),
+                    onChooseExercise: {}
+                )
+                ExerciseProgressWidget(exercise: nil, points: [], onChooseExercise: {})
             }
             .padding()
         }

@@ -262,7 +262,7 @@ private struct TotalsPreviewGallery: View {
                             .foregroundStyle(.secondary)
                         DashboardWidgetView(
                             kind: .totals,
-                            data: SampleData.dashboardData,
+                            stats: DashboardStats(data: SampleData.dashboardData),
                             range: .constant(.twelveWeeks),
                             size: size
                         )

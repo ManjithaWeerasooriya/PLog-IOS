@@ -17,6 +17,8 @@ struct AddWidgetGallery: View {
     @Environment(\.dismiss) private var dismiss
 
     let data: DashboardData
+    /// The dashboard's own figures for `data`, so previews don't recompute them.
+    let stats: DashboardStats
     let canAdd: (DashboardWidgetKind) -> Bool
     let onAdd: (DashboardWidgetKind, Exercise?) -> Void
 
@@ -29,7 +31,8 @@ struct AddWidgetGallery: View {
     @ScaledMetric(relativeTo: .body) private var gridUnit: CGFloat = DashboardGrid.baseUnit
 
     var body: some View {
-        NavigationStack {
+        let previewStats = self.previewStats
+        return NavigationStack {
             ScrollView {
                 VStack(spacing: 28) {
                     if usesSampleData {
@@ -39,7 +42,7 @@ struct AddWidgetGallery: View {
                             .multilineTextAlignment(.center)
                     }
                     ForEach(DashboardWidgetKind.allCases.filter(canAdd)) { kind in
-                        galleryItem(kind)
+                        galleryItem(kind, stats: previewStats)
                     }
                 }
                 .padding()
@@ -56,7 +59,7 @@ struct AddWidgetGallery: View {
         }
     }
 
-    private func galleryItem(_ kind: DashboardWidgetKind) -> some View {
+    private func galleryItem(_ kind: DashboardWidgetKind, stats: DashboardStats) -> some View {
         Button {
             onAdd(kind, kind.needsExercise ? exerciseToAdd : nil)
             dismiss()
@@ -69,7 +72,7 @@ struct AddWidgetGallery: View {
                 ) {
                     DashboardWidgetView(
                         kind: kind,
-                        data: previewData,
+                        stats: stats,
                         range: .constant(.twelveWeeks),
                         size: kind.defaultSize,
                         exercise: kind.needsExercise ? previewExercise : nil
@@ -99,21 +102,14 @@ struct AddWidgetGallery: View {
 
     private var usesSampleData: Bool { data.workouts.isEmpty }
 
-    private var previewData: DashboardData {
-        guard usesSampleData else { return data }
-        let context = SampleData.context
-        return DashboardData(
-            workouts: (try? context.fetch(FetchDescriptor<WorkoutDay>(sortBy: [SortDescriptor(\.date, order: .reverse)]))) ?? [],
-            plans: (try? context.fetch(FetchDescriptor<WorkoutPlan>())) ?? [],
-            bodyWeightKg: 72,
-            exercises: (try? context.fetch(FetchDescriptor<Exercise>(sortBy: [SortDescriptor(\.name)]))) ?? []
-        )
+    private var previewStats: DashboardStats {
+        usesSampleData ? DashboardStats(data: SampleData.dashboardData) : stats
     }
 
     /// What Exercise Progress starts on: the user's strongest lift, else any logged exercise,
     /// else the first in their library. Changeable afterwards from the card's context menu.
     private var exerciseToAdd: Exercise? {
-        WorkoutStats.bestLifts(exercises: data.exercises, limit: 1).first?.exercise
+        stats.bestLifts.first?.exercise
             ?? data.exercises.first { !$0.entries.isEmpty }
             ?? data.exercises.first
     }
@@ -144,14 +140,9 @@ private struct ScaledWidgetPreview<Content: View>: View {
 }
 
 #Preview {
-    let context = SampleData.context
     AddWidgetGallery(
-        data: DashboardData(
-            workouts: (try? context.fetch(FetchDescriptor<WorkoutDay>(sortBy: [SortDescriptor(\.date, order: .reverse)]))) ?? [],
-            plans: (try? context.fetch(FetchDescriptor<WorkoutPlan>())) ?? [],
-            bodyWeightKg: 72,
-            exercises: (try? context.fetch(FetchDescriptor<Exercise>(sortBy: [SortDescriptor(\.name)]))) ?? []
-        ),
+        data: SampleData.dashboardData,
+        stats: DashboardStats(data: SampleData.dashboardData),
         canAdd: { _ in true },
         onAdd: { _, _ in }
     )

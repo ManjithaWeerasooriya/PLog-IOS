@@ -24,6 +24,25 @@ enum ProgressRoute: Hashable {
     case muscleGroups(AnalyticsRange)
 }
 
+/// When the dashboard's figures need rebuilding. A plain class, not observed: updating it
+/// from a save notification must not redraw the dashboard.
+@MainActor
+private final class StatsTracker {
+    var isVisible = false
+    /// Starts stale so the first appearance builds the figures.
+    var isStale = true
+    var pending: Task<Void, Never>?
+    /// The sessions as plain values between rebuilds; a save re-reads only what it touched.
+    let records = SessionRecordCache()
+
+    /// The figures hold `Exercise`s (Best Lifts, Regressing) that the cards read even off
+    /// screen, so a save that deletes one has to rebuild them before the next redraw does.
+    static func deletesExercise(_ note: Notification) -> Bool {
+        let deleted = note.userInfo?[ModelContext.NotificationKey.deletedIdentifiers.rawValue] as? [PersistentIdentifier]
+        return deleted?.contains { $0.entityName == "Exercise" } ?? false
+    }
+}
+
 /// One grid row: a full-width widget, or one or two small ones (see `DashboardLayout`).
 private struct DashboardRow: Identifiable {
     let widgets: [DashboardWidget]
@@ -48,6 +67,12 @@ struct AnalyticsView: View {
     @State private var draggedWidget: DashboardWidget?
     /// Bumped on every removal, to drive the haptic.
     @State private var removals = 0
+    /// The widgets' figures. Built outside `body` and only when the data has changed, so a
+    /// stepper tap on the session screen doesn't recompute the dashboard behind it — see
+    /// `DashboardStats`. `nil` until the first appearance builds it, so the cards never
+    /// draw a frame of zeros.
+    @State private var stats: DashboardStats?
+    @State private var statsTracker = StatsTracker()
 
     @ScaledMetric(relativeTo: .body) private var badgeSize = 26
 
@@ -65,7 +90,26 @@ struct AnalyticsView: View {
                 .toolbar(isEditing ? .hidden : .visible, for: .tabBar)
                 // Never leave the tab bar hidden behind: leaving the tab (or anything that
                 // takes this screen away) ends editing.
-                .onDisappear { if isEditing { setEditing(false) } }
+                .onDisappear {
+                    statsTracker.isVisible = false
+                    if isEditing { setEditing(false) }
+                }
+                .onAppear {
+                    statsTracker.isVisible = true
+                    // Unsaved edits (a set changed just before switching tabs) only reach the
+                    // record cache through a save.
+                    if context.hasChanges { try? context.save() }
+                    if statsTracker.isStale { refreshStats() }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave)) { note in
+                    guard statsTracker.records.noteSave(note, in: context) else { return }
+                    statsTracker.isStale = true
+                    if stats != nil, StatsTracker.deletesExercise(note) {
+                        refreshStats()
+                    } else if statsTracker.isVisible {
+                        scheduleStatsRefresh()
+                    }
+                }
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
                         Button { setEditing(true) } label: {
@@ -79,7 +123,7 @@ struct AnalyticsView: View {
                     if isEditing { editBar }
                 }
                 .sheet(isPresented: $showingAddWidget) {
-                    AddWidgetGallery(data: data, canAdd: { viewModel?.canAdd($0) ?? false }) { kind, exercise in
+                    AddWidgetGallery(data: data, stats: stats ?? .empty, canAdd: { viewModel?.canAdd($0) ?? false }) { kind, exercise in
                         withAnimation(.snappy) { viewModel?.add(kind, exercise: exercise) }
                     }
                 }
@@ -100,7 +144,7 @@ struct AnalyticsView: View {
                     case .calendar:
                         CalendarView()
                     case .bestLifts:
-                        BestLiftsView()
+                        BestLiftsView(stats: stats ?? .empty)
                     case .muscleGroups(let range):
                         MuscleGroupsView(range: range)
                     }
@@ -120,8 +164,10 @@ struct AnalyticsView: View {
             emptyState
         } else if !isEditing && widgets.isEmpty {
             noWidgetsState
-        } else {
+        } else if stats != nil {
             dashboardContent
+        } else {
+            Color.clear
         }
     }
 
@@ -180,7 +226,7 @@ struct AnalyticsView: View {
         if let kind = widget.kind {
             let card = DashboardWidgetView(
                 kind: kind,
-                data: data,
+                stats: stats ?? .empty,
                 range: rangeBinding(for: widget),
                 size: widget.size,
                 exercise: widget.exercise
@@ -365,6 +411,22 @@ struct AnalyticsView: View {
     /// by the tab bar with no context to hand it.
     private var viewModel: DashboardViewModel? {
         dashboard.map { DashboardViewModel(dashboard: $0, context: context) }
+    }
+
+    private func refreshStats() {
+        statsTracker.pending?.cancel()
+        statsTracker.isStale = false
+        stats = DashboardStats(data: data, records: statsTracker.records.records(for: workouts))
+    }
+
+    /// Coalesces a burst of saves into one rebuild.
+    private func scheduleStatsRefresh() {
+        statsTracker.pending?.cancel()
+        statsTracker.pending = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            refreshStats()
+        }
     }
 
     private var data: DashboardData {

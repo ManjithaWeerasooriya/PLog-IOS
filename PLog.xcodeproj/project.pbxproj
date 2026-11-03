@@ -6,8 +6,19 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXContainerItemProxy section */
+		72F2C990309A4614008443D6 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7257C1303059D881001AE0FB /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7257C1373059D881001AE0FB;
+			remoteInfo = PLog;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		7257C1383059D881001AE0FB /* PLog.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PLog.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		72F2C989309A4614008443D6 /* PLogTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PLogTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -16,10 +27,22 @@
 			path = PLog;
 			sourceTree = "<group>";
 		};
+		72F2C98A309A4614008443D6 /* PLogTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = PLogTests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		7257C1353059D881001AE0FB /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		72F2C986309A4614008443D6 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -33,6 +56,7 @@
 			isa = PBXGroup;
 			children = (
 				7257C13A3059D881001AE0FB /* PLog */,
+				72F2C98A309A4614008443D6 /* PLogTests */,
 				7257C1393059D881001AE0FB /* Products */,
 			);
 			sourceTree = "<group>";
@@ -41,6 +65,7 @@
 			isa = PBXGroup;
 			children = (
 				7257C1383059D881001AE0FB /* PLog.app */,
+				72F2C989309A4614008443D6 /* PLogTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -70,6 +95,29 @@
 			productReference = 7257C1383059D881001AE0FB /* PLog.app */;
 			productType = "com.apple.product-type.application";
 		};
+		72F2C988309A4614008443D6 /* PLogTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 72F2C98D309A4614008443D6 /* Build configuration list for PBXNativeTarget "PLogTests" */;
+			buildPhases = (
+				72F2C985309A4614008443D6 /* Sources */,
+				72F2C986309A4614008443D6 /* Frameworks */,
+				72F2C987309A4614008443D6 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				72F2C991309A4614008443D6 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				72F2C98A309A4614008443D6 /* PLogTests */,
+			);
+			name = PLogTests;
+			packageProductDependencies = (
+			);
+			productName = PLogTests;
+			productReference = 72F2C989309A4614008443D6 /* PLogTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -77,11 +125,15 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 2660;
+				LastSwiftUpdateCheck = 2700;
 				LastUpgradeCheck = 2700;
 				TargetAttributes = {
 					7257C1373059D881001AE0FB = {
 						CreatedOnToolsVersion = 26.6;
+					};
+					72F2C988309A4614008443D6 = {
+						CreatedOnToolsVersion = 27.0;
+						TestTargetID = 7257C1373059D881001AE0FB;
 					};
 				};
 			};
@@ -100,12 +152,20 @@
 			projectRoot = "";
 			targets = (
 				7257C1373059D881001AE0FB /* PLog */,
+				72F2C988309A4614008443D6 /* PLogTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		7257C1363059D881001AE0FB /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		72F2C987309A4614008443D6 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -122,7 +182,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		72F2C985309A4614008443D6 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		72F2C991309A4614008443D6 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7257C1373059D881001AE0FB /* PLog */;
+			targetProxy = 72F2C990309A4614008443D6 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		7257C1413059D881001AE0FB /* Debug */ = {
@@ -314,6 +389,52 @@
 			};
 			name = Release;
 		};
+		72F2C98E309A4614008443D6 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.manjitha.PLogTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/PLog.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/PLog";
+			};
+			name = Debug;
+		};
+		72F2C98F309A4614008443D6 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.manjitha.PLogTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/PLog.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/PLog";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -331,6 +452,15 @@
 			buildConfigurations = (
 				7257C1443059D881001AE0FB /* Debug */,
 				7257C1453059D881001AE0FB /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		72F2C98D309A4614008443D6 /* Build configuration list for PBXNativeTarget "PLogTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				72F2C98E309A4614008443D6 /* Debug */,
+				72F2C98F309A4614008443D6 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

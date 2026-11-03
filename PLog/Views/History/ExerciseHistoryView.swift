@@ -18,7 +18,9 @@ struct ExerciseHistoryView: View {
     }
 
     var body: some View {
-        List {
+        // Read once: each read walks the exercise's whole history.
+        let points = viewModel.points
+        return List {
             Section {
                 Picker("Metric", selection: $viewModel.selectedMetric) {
                     ForEach(ExerciseHistoryViewModel.Metric.allCases) { metric in
@@ -28,12 +30,12 @@ struct ExerciseHistoryView: View {
                 .pickerStyle(.segmented)
                 .listRowSeparator(.hidden)
 
-                chartSection
+                chartSection(points)
             }
 
-            if !viewModel.points.isEmpty {
+            if !points.isEmpty {
                 Section("Sessions") {
-                    ForEach(viewModel.points.reversed()) { point in
+                    ForEach(points.reversed()) { point in
                         HStack {
                             Text(point.date.mediumDayLabel)
                             Spacer()
@@ -64,18 +66,18 @@ struct ExerciseHistoryView: View {
     // MARK: - Chart
 
     @ViewBuilder
-    private var chartSection: some View {
-        if viewModel.hasEnoughDataForChart {
+    private func chartSection(_ points: [ExerciseHistoryPoint]) -> some View {
+        if !points.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text(viewModel.selectedMetric.rawValue)
                         .font(.headline)
-                    TrendBadge(trend: viewModel.overallTrend)
+                    TrendBadge(trend: viewModel.selectedMetric.overallTrend(of: points))
                     Spacer()
                 }
 
                 ExerciseHistoryChart(
-                    points: viewModel.points,
+                    points: points,
                     metric: viewModel.selectedMetric,
                     color: viewModel.exercise.category.color
                 )

@@ -18,23 +18,30 @@ final class ExerciseEntryViewModel {
 
     /// The top set from the previous session — the "Last time" hint, and the fallback
     /// comparison for a set the previous session didn't have.
-    let previousTopSet: SetSnapshot?
+    var previousTopSet: SetSnapshot? { previous.topSet }
 
     /// The previous session's sets as working-set groups (each set followed by its drops),
     /// so set *n* is graded against set *n* and a drop against the same drop last time.
-    let previousGroups: [[SetSnapshot]]
+    var previousGroups: [[SetSnapshot]] { previous.groups }
+
+    /// Last session, looked up on first use rather than in `init`. The session screen
+    /// re-runs every row's `init` on each redraw (expanding an exercise, adding one) and
+    /// `@State` keeps only the first view model, so a lookup in `init` was repeated for
+    /// view models that were thrown straight away.
+    @ObservationIgnored
+    private lazy var previous: (topSet: SetSnapshot?, groups: [[SetSnapshot]]) = {
+        guard let exercise = entry.exercise else { return (nil, []) }
+        return (
+            WorkoutHistory.previousTopSet(for: exercise, excluding: entry),
+            WorkoutHistory.previousSetGroups(for: exercise, excluding: entry)
+        )
+    }()
 
     private let context: ModelContext
 
     init(entry: ExerciseEntry, context: ModelContext) {
         self.entry = entry
         self.context = context
-        self.previousTopSet = entry.exercise.flatMap {
-            WorkoutHistory.previousTopSet(for: $0, excluding: entry)
-        }
-        self.previousGroups = entry.exercise.map {
-            WorkoutHistory.previousSetGroups(for: $0, excluding: entry)
-        } ?? []
     }
 
     /// Sets sorted for display.

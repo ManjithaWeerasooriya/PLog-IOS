@@ -67,20 +67,15 @@ final class ExerciseHistoryViewModel {
         self.exercise = exercise
     }
 
-    /// All logged sessions for this exercise, oldest → newest.
+    /// All logged sessions for this exercise, oldest → newest. Walks the whole history on
+    /// every read (it stays live that way), so a view reads it once per redraw and passes it
+    /// down: the history screen used to read it five times per redraw.
     var points: [ExerciseHistoryPoint] {
         WorkoutHistory.historyPoints(for: exercise)
     }
 
-    var hasEnoughDataForChart: Bool { points.count >= 1 }
-
     /// The value for the currently selected metric at a given point.
     func value(for point: ExerciseHistoryPoint) -> Double {
         selectedMetric.value(of: point)
-    }
-
-    /// Overall trend across the whole history (first vs last logged value).
-    var overallTrend: ProgressTrend {
-        selectedMetric.overallTrend(of: points)
     }
 }

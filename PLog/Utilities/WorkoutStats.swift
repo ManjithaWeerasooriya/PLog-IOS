@@ -4,7 +4,8 @@
 //
 //  Read-only aggregations over logged sessions for the Analytics tab: volume per day/week,
 //  sessions per week, muscle-group split, streaks, best lifts and regressions. Pure functions
-//  over the `@Query` results so the view stays a thin layout layer.
+//  over `SessionRecord`s (plain copies of the sessions, see `SessionRecordCache`) so the
+//  view stays a thin layout layer.
 //
 
 import Foundation
@@ -69,18 +70,10 @@ enum WorkoutStats {
         var id: PersistentIdentifier { exercise.persistentModelID }
     }
 
-    // MARK: - Per-session totals
-
-    static func volume(of day: WorkoutDay) -> Double {
-        day.entries.reduce(0) { $0 + $1.totalVolume }
-    }
-
-    static func setCount(of day: WorkoutDay) -> Int {
-        day.entries.reduce(0) { $0 + $1.workingSets.count }
-    }
+    // MARK: - Date windows
 
     /// Sessions dated within `[start, end)`.
-    static func workouts(_ workouts: [WorkoutDay], from start: Date, before end: Date) -> [WorkoutDay] {
+    static func workouts<Session: Dated>(_ workouts: [Session], from start: Date, before end: Date) -> [Session] {
         workouts.filter { $0.date >= start && $0.date < end }
     }
 
@@ -89,7 +82,7 @@ enum WorkoutStats {
     /// Volume for each of the last `count` calendar days ending today, oldest first. Days
     /// with no session are included as zero so a bar chart keeps a fixed width.
     static func dailyVolumes(
-        workouts: [WorkoutDay],
+        sessions workouts: [SessionRecord],
         days count: Int,
         today: Date = .now,
         calendar: Calendar = .current
@@ -98,7 +91,7 @@ enum WorkoutStats {
         let byDay = Dictionary(grouping: workouts) { calendar.startOfDay(for: $0.date) }
         return (0..<count).reversed().compactMap { back in
             guard let date = calendar.date(byAdding: .day, value: -back, to: todayStart) else { return nil }
-            let volume = (byDay[date] ?? []).reduce(0) { $0 + self.volume(of: $1) }
+            let volume = (byDay[date] ?? []).reduce(0) { $0 + $1.volume }
             return DailyVolume(date: date, volume: volume)
         }
     }
@@ -106,7 +99,7 @@ enum WorkoutStats {
     /// One summary per week for the last `count` weeks ending with the current one, oldest
     /// first. Weeks with no session are included as zeros.
     static func weeklySummaries(
-        workouts: [WorkoutDay],
+        sessions workouts: [SessionRecord],
         weeks count: Int,
         today: Date = .now,
         calendar: Calendar = .current
@@ -119,8 +112,8 @@ enum WorkoutStats {
             return WeekSummary(
                 weekStart: start,
                 sessions: sessions.count,
-                sets: sessions.reduce(0) { $0 + setCount(of: $1) },
-                volume: sessions.reduce(0) { $0 + volume(of: $1) }
+                sets: sessions.reduce(0) { $0 + $1.workingSets },
+                volume: sessions.reduce(0) { $0 + $1.volume }
             )
         }
     }
@@ -129,16 +122,15 @@ enum WorkoutStats {
     /// for each of its exercise's primary groups and as `secondarySetWeight` for each
     /// secondary one, so the shares sum to more than the sets actually done. Entries whose
     /// exercise was deleted from the library have no groups and are skipped.
-    static func muscleGroupSplit(workouts: [WorkoutDay]) -> [MuscleGroupShare] {
+    static func muscleGroupSplit(sessions workouts: [SessionRecord]) -> [MuscleGroupShare] {
         var counts: [MuscleGroup: Double] = [:]
         for day in workouts {
             for entry in day.entries {
-                guard let exercise = entry.exercise else { continue }
-                let sets = Double(entry.workingSets.count)
-                for group in exercise.primaryMuscles {
+                let sets = Double(entry.workingSets)
+                for group in entry.primaryMuscles {
                     counts[group, default: 0] += sets
                 }
-                for group in exercise.secondaryMuscles {
+                for group in entry.secondaryMuscles {
                     counts[group, default: 0] += sets * secondarySetWeight
                 }
             }
@@ -152,34 +144,65 @@ enum WorkoutStats {
     /// Sets per muscle group over the last `weeks` weeks ending with the current one — the
     /// Muscle Groups widget and its detail screen both read this, so their totals agree.
     static func muscleGroupSplit(
+        sessions: [SessionRecord],
+        weeks: Int,
+        today: Date = .now,
+        calendar: Calendar = .current
+    ) -> [MuscleGroupShare] {
+        muscleGroupSplit(sessions: self.workouts(sessions, inLastWeeks: weeks, today: today, calendar: calendar))
+    }
+
+    /// The same split straight from the models, for a screen without the dashboard's records.
+    /// Only the sessions in range are read.
+    static func muscleGroupSplit(
         workouts: [WorkoutDay],
         weeks: Int,
         today: Date = .now,
         calendar: Calendar = .current
     ) -> [MuscleGroupShare] {
-        muscleGroupSplit(workouts: self.workouts(workouts, inLastWeeks: weeks, today: today, calendar: calendar))
+        muscleGroupSplit(
+            sessions: self.workouts(workouts, inLastWeeks: weeks, today: today, calendar: calendar).map { SessionRecord($0) },
+            weeks: weeks,
+            today: today,
+            calendar: calendar
+        )
     }
 
     /// Working sets actually performed over the same window as `muscleGroupSplit(workouts:weeks:)`.
     /// This is the donut's centre figure: the split's shares are weighted (a secondary muscle
     /// gets half a set), so they sum to more than was done and can end in .5.
     static func workingSetCount(
+        sessions: [SessionRecord],
+        weeks: Int,
+        today: Date = .now,
+        calendar: Calendar = .current
+    ) -> Int {
+        self.workouts(sessions, inLastWeeks: weeks, today: today, calendar: calendar)
+            .reduce(0) { $0 + $1.workingSets }
+    }
+
+    /// The same count straight from the models; only the sessions in range are read.
+    static func workingSetCount(
         workouts: [WorkoutDay],
         weeks: Int,
         today: Date = .now,
         calendar: Calendar = .current
     ) -> Int {
-        self.workouts(workouts, inLastWeeks: weeks, today: today, calendar: calendar)
-            .reduce(0) { $0 + setCount(of: $1) }
+        workingSetCount(
+            sessions: self.workouts(workouts, inLastWeeks: weeks, today: today, calendar: calendar).map { SessionRecord($0) },
+            weeks: weeks,
+            today: today,
+            calendar: calendar
+        )
     }
 
     /// Sessions in the last `weeks` weeks, counting the current one.
-    static func workouts(
-        _ workouts: [WorkoutDay],
+    static func workouts<Session: Dated>(
+        _ workouts: [Session],
         inLastWeeks weeks: Int,
         today: Date = .now,
         calendar: Calendar = .current
-    ) -> [WorkoutDay] {
+    ) -> [Session] {
         guard
             let thisWeek = weekStart(of: today, calendar: calendar),
             let start = calendar.date(byAdding: .weekOfYear, value: -(max(weeks, 1) - 1), to: thisWeek)
@@ -198,7 +221,7 @@ enum WorkoutStats {
     /// current week doesn't break the streak — it isn't over yet — so the count starts from
     /// last week in that case.
     static func weekStreak(
-        workouts: [WorkoutDay],
+        workouts: [some Dated],
         today: Date = .now,
         calendar: Calendar = .current
     ) -> Int {
@@ -219,10 +242,16 @@ enum WorkoutStats {
 
     /// The exercises with the highest best-ever estimated 1RM, strongest first. Trend
     /// compares the top set of the last two sessions the same way the set editor does.
-    static func bestLifts(exercises: [Exercise], limit: Int = 5) -> [ExerciseBest] {
+    /// `points` supplies each exercise's history; pass precomputed points to avoid walking
+    /// the history again (see `DashboardStats`).
+    static func bestLifts(
+        exercises: [Exercise],
+        limit: Int = 5,
+        points pointsFor: ((Exercise) -> [ExerciseHistoryPoint])? = nil
+    ) -> [ExerciseBest] {
         exercises
             .compactMap { exercise -> ExerciseBest? in
-                let points = WorkoutHistory.historyPoints(for: exercise)
+                let points = pointsFor?(exercise) ?? WorkoutHistory.historyPoints(for: exercise)
                 guard let best = points.map(\.estimatedOneRepMax).max(), best > 0 else { return nil }
                 let trend = lastSessionComparison(for: exercise, points: points)?.trend ?? .none
                 return ExerciseBest(exercise: exercise, estimatedOneRepMax: best, trend: trend)
@@ -252,9 +281,12 @@ enum WorkoutStats {
 
     /// Exercises whose latest session's estimated 1RM fell below the session before,
     /// biggest relative drop first.
-    static func regressingExercises(exercises: [Exercise]) -> [SessionComparison] {
+    static func regressingExercises(
+        exercises: [Exercise],
+        points pointsFor: ((Exercise) -> [ExerciseHistoryPoint])? = nil
+    ) -> [SessionComparison] {
         exercises
-            .compactMap { lastSessionComparison(for: $0) }
+            .compactMap { lastSessionComparison(for: $0, points: pointsFor?($0)) }
             .filter { $0.trend == .regressed }
             .sorted { lhs, rhs in
                 relativeChange(lhs) < relativeChange(rhs)
