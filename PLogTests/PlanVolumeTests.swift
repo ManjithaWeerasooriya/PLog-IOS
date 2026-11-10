@@ -66,6 +66,27 @@ final class PlanVolumeTests: XCTestCase {
         XCTAssertEqual(PlanVolume.setString(9.5), "9.5")
     }
 
+    /// The bars' "done" side: sets logged this week only, primary full and secondary half,
+    /// fetched through the same week-start query the screens use.
+    func testWeekProgressCountsOnlyThisWeek() throws {
+        let context = try makeContext()
+        let bench = exercise("Bench Press", primary: [.chest], secondary: [.triceps], in: context)
+        let now = Date.now
+        log(bench, on: now, sets: 3, in: context)
+        log(bench, on: try XCTUnwrap(Calendar.current.date(byAdding: .day, value: -7, to: now)), sets: 5, in: context)
+        try context.save()
+
+        let start = try XCTUnwrap(WorkoutStats.weekStart(of: now))
+        let thisWeek = try context.fetch(FetchDescriptor<WorkoutDay>(predicate: #Predicate { $0.date >= start }))
+        let progress = WeekProgress(workouts: thisWeek)
+        XCTAssertEqual(progress.setsDone, 3)
+        XCTAssertEqual(progress.sets(for: .chest), 3)
+        XCTAssertEqual(progress.sets(for: .triceps), 1.5)
+        XCTAssertEqual(progress.sets(for: .back), 0)
+        XCTAssertEqual(PlanProgressBar.figure(planned: 14, done: progress.sets(for: .chest)), "3/14")
+        XCTAssertEqual(PlanProgressBar.figure(planned: 14, done: nil), "14")
+    }
+
     /// A 7-day plan with 10 slots a day — far bigger than a real one.
     func testSummaryTiming() throws {
         let context = try makeContext()
@@ -91,6 +112,19 @@ final class PlanVolumeTests: XCTestCase {
         exercise.setMuscles(primary: primary, secondary: secondary)
         context.insert(exercise)
         return exercise
+    }
+
+    private func log(_ exercise: Exercise, on date: Date, sets: Int, in context: ModelContext) {
+        let day = WorkoutDay(date: date)
+        context.insert(day)
+        let entry = ExerciseEntry(exercise: exercise)
+        context.insert(entry)
+        day.entries.append(entry)
+        for index in 0..<sets {
+            let set = SetEntry(setNumber: index + 1, weight: 60, reps: 8)
+            context.insert(set)
+            entry.sets.append(set)
+        }
     }
 
     private func makePlan(_ days: [[(Exercise, Int)]], in context: ModelContext) -> WorkoutPlan {

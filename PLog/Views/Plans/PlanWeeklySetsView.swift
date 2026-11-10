@@ -5,8 +5,11 @@
 //  Planned working sets per muscle group per week (`PlanVolume`). Two surfaces:
 //  `PlanWeeklySetsSection`, the summary at the bottom of `PlanDetailView` (total, share bar,
 //  on-target counts, a two-column grid of every group), and `PlanWeeklySetsView`, pushed from
-//  it, where each group opens to the slots it comes from, with a sets stepper on each so the plan can be adjusted without leaving the screen.
-//  Plain stack content — the owning `NavigationStack` is `PlanListView`'s.
+//  it, where each group opens to the slots it comes from, with a sets stepper on each so the
+//  plan can be adjusted without leaving the screen. For the active plan every bar reads
+//  "planned vs done": light green up to the group's planned weekly sets, the group's colour up
+//  to the sets logged this week (`WeekProgress`). Plain stack content — the owning
+//  `NavigationStack` is `PlanListView`'s.
 //
 
 import SwiftUI
@@ -17,10 +20,19 @@ import SwiftData
 struct PlanWeeklySetsSection: View {
     let plan: WorkoutPlan
 
+    /// Only this week's sessions are fetched — see `WeekProgress.query`.
+    @Query private var thisWeek: [WorkoutDay]
+
     @Environment(\.dynamicTypeSize) private var typeSize
+
+    init(plan: WorkoutPlan) {
+        self.plan = plan
+        _thisWeek = WeekProgress.query()
+    }
 
     var body: some View {
         let summary = PlanVolume.summary(for: plan)
+        let progress = plan.isActive ? WeekProgress(workouts: thisWeek) : nil
         Section {
             if summary.isEmpty {
                 Text("Add exercises to your days to see sets per muscle group.")
@@ -33,6 +45,12 @@ struct PlanWeeklySetsSection: View {
                             .monospacedDigit()
                         Text("sets a week")
                             .foregroundStyle(.secondary)
+                        if let progress {
+                            Spacer(minLength: 8)
+                            Text("\(progress.setsDone) done")
+                                .font(.subheadline.weight(.semibold))
+                                .monospacedDigit()
+                        }
                     }
                     .accessibilityElement(children: .combine)
                     MuscleShareBar(groups: summary.groups)
@@ -52,7 +70,7 @@ struct PlanWeeklySetsSection: View {
 
                 LazyVGrid(columns: gridColumns, alignment: .leading, spacing: 12) {
                     ForEach(summary.groups) { volume in
-                        GridCell(volume: volume)
+                        GridCell(volume: volume, done: progress?.sets(for: volume.group))
                     }
                 }
                 .padding(.vertical, 6)
@@ -68,7 +86,7 @@ struct PlanWeeklySetsSection: View {
                 Text("\(plan.daysPerWeek) day\(plan.daysPerWeek == 1 ? "" : "s") a week")
             }
         } footer: {
-            Text("Target: 10–30 sets per muscle. Secondary muscles count half.")
+            Text((progress == nil ? "" : "Green: planned. Colour: done this week. ") + "Target: 10–30 sets per muscle. Secondary muscles count half.")
         }
     }
 
@@ -80,6 +98,8 @@ struct PlanWeeklySetsSection: View {
 
     private struct GridCell: View {
         let volume: PlanVolume.GroupVolume
+        /// Sets logged this week; `nil` when the plan isn't active.
+        let done: Double?
 
         var body: some View {
             VStack(alignment: .leading, spacing: 5) {
@@ -91,7 +111,7 @@ struct PlanWeeklySetsSection: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
                     Spacer(minLength: 4)
-                    Text(PlanVolume.setString(volume.weeklySets))
+                    Text(PlanProgressBar.figure(planned: volume.weeklySets, done: done))
                         .fontWeight(.semibold)
                         .monospacedDigit()
                     if volume.status == .below || volume.status == .high {
@@ -101,7 +121,7 @@ struct PlanWeeklySetsSection: View {
                     }
                 }
                 .font(.subheadline)
-                TargetBandBar(value: volume.weeklySets, color: volume.group.color, height: 4)
+                PlanProgressBar(planned: volume.weeklySets, done: done, color: volume.group.color, height: 4)
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(volume.group.displayName)
@@ -109,7 +129,7 @@ struct PlanWeeklySetsSection: View {
         }
 
         private var accessibilityValue: String {
-            let sets = "\(PlanVolume.setString(volume.weeklySets)) sets a week"
+            let sets = PlanProgressBar.accessibilityText(planned: volume.weeklySets, done: done)
             switch volume.status {
             case .below: return sets + ", below target"
             case .met: return sets + ", on target"
@@ -123,7 +143,9 @@ struct PlanWeeklySetsSection: View {
 // MARK: - Weekly Sets screen
 
 struct PlanWeeklySetsView: View {
-    @Bindable var plan: WorkoutPlan
+    let plan: WorkoutPlan
+
+    @Query private var thisWeek: [WorkoutDay]
 
     /// Only one group open at a time, like the plan day's slots.
     @State private var expanded: MuscleGroup?
@@ -133,21 +155,27 @@ struct PlanWeeklySetsView: View {
 
     @Environment(\.dynamicTypeSize) private var typeSize
 
+    init(plan: WorkoutPlan) {
+        self.plan = plan
+        _thisWeek = WeekProgress.query()
+    }
+
     var body: some View {
         let summary = PlanVolume.summary(for: plan)
+        let progress = plan.isActive ? WeekProgress(workouts: thisWeek) : nil
         List {
             Section {
                 ForEach(ordered(summary.groups)) { volume in
                     DisclosureGroup(isExpanded: isExpanded(volume.group)) {
                         GroupContent(volume: volume)
                     } label: {
-                        GroupLabel(volume: volume, isAccessibilitySize: typeSize.isAccessibilitySize)
+                        GroupLabel(volume: volume, done: progress?.sets(for: volume.group), isAccessibilitySize: typeSize.isAccessibilitySize)
                     }
                 }
             } header: {
-                Text("\(PlanVolume.setString(summary.weeklySets)) sets a week · \(plan.daysPerWeek) day\(plan.daysPerWeek == 1 ? "" : "s")")
+                Text("\(PlanVolume.setString(summary.weeklySets)) sets a week · \(plan.daysPerWeek) day\(plan.daysPerWeek == 1 ? "" : "s")" + (progress.map { " · \($0.setsDone) done" } ?? ""))
             } footer: {
-                Text("Target: 10–30 sets per muscle. Secondary muscles count half. Tap a muscle to change its sets per session. Set how often a day repeats on that day's screen.")
+                Text((progress == nil ? "" : "Green: planned. Colour: done this week. ") + "Target: 10–30 sets per muscle. Secondary muscles count half. Tap a muscle to change its sets per session. Set how often a day repeats on that day's screen.")
             }
         }
         .navigationTitle("Weekly Sets")
@@ -175,6 +203,8 @@ struct PlanWeeklySetsView: View {
 
 private struct GroupLabel: View {
     let volume: PlanVolume.GroupVolume
+    /// Sets logged this week; `nil` when the plan isn't active.
+    let done: Double?
     let isAccessibilitySize: Bool
 
     var body: some View {
@@ -194,7 +224,7 @@ private struct GroupLabel: View {
                 if isAccessibilitySize {
                     setsText
                 }
-                TargetBandBar(value: volume.weeklySets, color: volume.group.color, height: 6)
+                PlanProgressBar(planned: volume.weeklySets, done: done, color: volume.group.color, height: 6)
                 if isAccessibilitySize, let status = volume.status {
                     VolumeStatusBadge(status: status, compact: true)
                 }
@@ -205,10 +235,11 @@ private struct GroupLabel: View {
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
+        .accessibilityValue(PlanProgressBar.accessibilityText(planned: volume.weeklySets, done: done))
     }
 
     private var setsText: some View {
-        Text("\(PlanVolume.setString(volume.weeklySets))/wk")
+        Text(done == nil ? "\(PlanVolume.setString(volume.weeklySets))/wk" : "\(PlanProgressBar.figure(planned: volume.weeklySets, done: done))/wk")
             .font(.subheadline)
             .foregroundStyle(.secondary)
             .monospacedDigit()
@@ -311,34 +342,73 @@ private struct ContributionRow: View {
 
 // MARK: - Shared pieces
 
-/// A track from 0 to 40 sets (or the value, if higher) with the 10–30 target band shaded
-/// green and the value filled in the group's colour. Drawn in a `Canvas`: one view per bar
-/// instead of a `GeometryReader` and three shapes, which matters when a stepper held down
-/// redraws every row 12–25 times a second.
-struct TargetBandBar: View {
-    let value: Double
+/// Sets logged this week per muscle group, counted like the Muscle Groups widget's "This
+/// Week" (`WorkoutStats.muscleGroupSplit`, weeks: 1), so the two always agree.
+struct WeekProgress {
+    private let done: [MuscleGroup: Double]
+    /// Working sets actually performed this week (not weighted).
+    let setsDone: Int
+
+    init(workouts: [WorkoutDay], calendar: Calendar = .current) {
+        let split = WorkoutStats.muscleGroupSplit(workouts: workouts, weeks: 1, calendar: calendar)
+        done = Dictionary(uniqueKeysWithValues: split.map { ($0.group, $0.sets) })
+        setsDone = WorkoutStats.workingSetCount(workouts: workouts, weeks: 1, calendar: calendar)
+    }
+
+    func sets(for group: MuscleGroup) -> Double {
+        done[group] ?? 0
+    }
+
+    /// Fetches only sessions from the start of this week, so a stepper tick doesn't walk the
+    /// whole history. The split re-filters by week, so a screen left open past the week's end
+    /// never counts last week.
+    static func query(calendar: Calendar = .current) -> Query<WorkoutDay, [WorkoutDay]> {
+        let start = WorkoutStats.weekStart(of: .now, calendar: calendar) ?? .distantPast
+        return Query(filter: #Predicate<WorkoutDay> { $0.date >= start })
+    }
+}
+
+/// Planned vs done for one muscle group: the light green track runs from 0 to the planned
+/// weekly sets and the group's colour fills up to the sets done this week. With no `done`
+/// (a plan that isn't active) the colour shows the planned sets instead. The scale is 0 to
+/// 40 sets (or more, if a value is higher), so rows compare at a glance. Drawn in a `Canvas`:
+/// one view per bar instead of a `GeometryReader` and three shapes, which matters when a
+/// stepper held down redraws every row 12–25 times a second.
+struct PlanProgressBar: View {
+    let planned: Double
+    let done: Double?
     let color: Color
     var height: CGFloat = 6
 
     var body: some View {
         Canvas { context, size in
-            let scale = max(40, value)
-            let track = Path(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: size.height / 2)
-            context.clip(to: track)
-            context.fill(track, with: .style(.fill.tertiary))
-            let low = size.width * HypertrophyTarget.minimumWeeklySets / scale
-            let high = size.width * HypertrophyTarget.highWeeklySets / scale
-            context.fill(Path(CGRect(x: low, y: 0, width: high - low, height: size.height)), with: .color(.green.opacity(0.28)))
-            let filled = size.width * min(value / scale, 1)
-            if filled > 0 {
-                context.fill(
-                    Path(roundedRect: CGRect(x: 0, y: 0, width: filled, height: size.height), cornerRadius: size.height / 2),
-                    with: .color(color)
-                )
+            let scale = max(40, planned, done ?? 0)
+            let radius = size.height / 2
+            func bar(_ value: Double) -> Path {
+                Path(roundedRect: CGRect(x: 0, y: 0, width: size.width * min(value / scale, 1), height: size.height), cornerRadius: radius)
+            }
+            context.fill(Path(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: radius), with: .style(.fill.tertiary))
+            if let done {
+                if planned > 0 { context.fill(bar(planned), with: .color(.green.opacity(0.3))) }
+                if done > 0 { context.fill(bar(done), with: .color(color)) }
+            } else if planned > 0 {
+                context.fill(bar(planned), with: .color(color))
             }
         }
         .frame(height: height)
         .accessibilityHidden(true)
+    }
+
+    /// "3/14" (done/planned), or "14" when nothing is being tracked.
+    static func figure(planned: Double, done: Double?) -> String {
+        guard let done else { return PlanVolume.setString(planned) }
+        return "\(PlanVolume.setString(done))/\(PlanVolume.setString(planned))"
+    }
+
+    static func accessibilityText(planned: Double, done: Double?) -> String {
+        let plannedText = "\(PlanVolume.setString(planned)) sets a week planned"
+        guard let done else { return plannedText }
+        return "\(PlanVolume.setString(done)) done this week, " + plannedText
     }
 }
 
