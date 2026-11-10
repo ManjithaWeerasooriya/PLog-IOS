@@ -109,6 +109,7 @@ final class WorkoutPlanViewModel {
 
         for day in plan.orderedDays {
             let dayCopy = PlanDay(name: day.name, order: day.order)
+            dayCopy.weeklyFrequency = day.weeklyFrequency
             context.insert(dayCopy)
             copy.days.append(dayCopy)
 

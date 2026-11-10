@@ -20,6 +20,10 @@ final class PlanDay {
     /// The owning plan. Inverse of `WorkoutPlan.days`.
     var plan: WorkoutPlan?
 
+    /// How many times a week this day is trained, for the plan's weekly sets. `nil` (every
+    /// day saved before this existed, and a new day) means once — read it through `timesPerWeek`.
+    var weeklyFrequency: Int?
+
     /// The exercise templates for this day.
     ///
     /// Cascade delete: removing the day removes its templates. Inverse on `PlanExercise.planDay`.
@@ -40,6 +44,12 @@ final class PlanDay {
         self.name = name
         self.order = order
         self.plan = plan
+    }
+
+    /// Times a week this day is trained (1–7).
+    var timesPerWeek: Int {
+        get { min(max(weeklyFrequency ?? 1, 1), 7) }
+        set { weeklyFrequency = newValue }
     }
 
     var orderedExercises: [PlanExercise] {

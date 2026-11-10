@@ -226,6 +226,8 @@ struct MuscleGroupsView: View {
 /// capsule fill, and the text stays label-coloured, like `TrendBadge`.
 struct VolumeStatusBadge: View {
     let status: HypertrophyTarget.Status
+    /// "Below" / "On target" / "High" — for rows that also carry a bar and a figure.
+    var compact = false
 
     var body: some View {
         HStack(spacing: 4) {
@@ -246,9 +248,9 @@ struct VolumeStatusBadge: View {
 
     private var label: String {
         switch status {
-        case .below: return "Below target"
+        case .below: return compact ? "Below" : "Below target"
         case .met: return "On target"
-        case .high: return "High volume"
+        case .high: return compact ? "High" : "High volume"
         }
     }
 

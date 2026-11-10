@@ -3,7 +3,7 @@
 //  PLog
 //
 //  Edit one plan: name, start/end lifecycle, the ordered list of day templates, and a link
-//  into the day-by-day workout log. Everything autosaves; nothing to confirm on back.
+//  into the day-by-day workout log, then the planned weekly sets per muscle group. Everything autosaves; nothing to confirm on back.
 //
 
 import SwiftUI
@@ -41,6 +41,8 @@ struct PlanDetailView: View {
             }
 
             daysSection
+
+            PlanWeeklySetsSection(plan: viewModel.plan)
         }
         .navigationTitle(plan.name.isEmpty ? "Plan" : plan.name)
         .navigationBarTitleDisplayMode(.inline)
@@ -145,9 +147,11 @@ struct PlanDetailView: View {
         viewModel.reorderDays(ordered)
     }
 
+    /// "Bench Press · Overhead Press…", led by "2× a week ·" when the day repeats.
     private func exerciseSummary(for day: PlanDay) -> String {
         let names = day.orderedExercises.compactMap { $0.exercise?.name }
-        return names.isEmpty ? "No exercises yet" : names.joined(separator: " · ")
+        let list = names.isEmpty ? "No exercises yet" : names.joined(separator: " · ")
+        return day.timesPerWeek > 1 ? "\(day.timesPerWeek)× a week · \(list)" : list
     }
 }
 

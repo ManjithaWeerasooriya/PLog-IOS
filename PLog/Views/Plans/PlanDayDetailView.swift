@@ -2,7 +2,7 @@
 //  PlanDayDetailView.swift
 //  PLog
 //
-//  Edit one day template: its name and the exercises with target sets × reps that get
+//  Edit one day template: its name, how many times a week it runs, and the exercises with target sets × reps that get
 //  pre-created every time this day is logged. Everything autosaves; nothing to confirm on back.
 //
 
@@ -23,9 +23,14 @@ struct PlanDayDetailView: View {
 
     var body: some View {
         List {
-            Section("Day") {
+            Section {
                 TextField("Day name", text: $day.name)
                     .font(.headline)
+                NumberStepper(title: "Times a week", intValue: $day.timesPerWeek, range: 1...7, style: .row)
+            } header: {
+                Text("Day")
+            } footer: {
+                Text("How often you train this day in a week. Used for the plan's weekly sets.")
             }
 
             exercisesSection

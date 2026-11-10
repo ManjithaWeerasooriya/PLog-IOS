@@ -16,6 +16,8 @@ import SwiftData
 /// leave its destination outside the path and break `NavigationLink(value:)` inside it).
 enum PlanRoute: Hashable {
     case log(WorkoutPlan)
+    /// Planned sets per muscle group per week, with steppers to adjust them.
+    case weeklySets(WorkoutPlan)
 }
 
 struct PlanListView: View {
@@ -57,6 +59,8 @@ struct PlanListView: View {
                 switch route {
                 case .log(let plan):
                     PlanLogView(plan: plan, context: context, path: $path)
+                case .weeklySets(let plan):
+                    PlanWeeklySetsView(plan: plan)
                 }
             }
             .toolbar {

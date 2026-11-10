@@ -17,9 +17,10 @@ import SwiftData
 nonisolated struct PLogBackup: Codable {
     /// 2 added `SetRecord.isDrop`; 3 added `supersetID` on entries and plan slots; 4 added
     /// the Progress `dashboard` layout; 5 added each widget's `size`; 6 added each exercise's
-    /// extra primary and secondary muscle groups. An older app refuses a newer file rather
+    /// extra primary and secondary muscle groups; 7 added how many times a week each plan day runs.
+    /// An older app refuses a newer file rather
     /// than silently dropping what it can't represent.
-    static let currentVersion = 6
+    static let currentVersion = 7
 
     var version: Int = PLogBackup.currentVersion
     var exportedAt: Date
@@ -62,6 +63,8 @@ nonisolated struct PLogBackup: Codable {
         var id: UUID
         var name: String
         var order: Int
+        /// Absent before version 7 (and when never set) — once a week.
+        var timesPerWeek: Int?
         var exercises: [PlanExerciseRecord]
     }
 
@@ -193,6 +196,7 @@ enum DataBackup {
                             id: id,
                             name: day.name,
                             order: day.order,
+                            timesPerWeek: day.weeklyFrequency,
                             exercises: day.orderedExercises.map { slot in
                                 .init(
                                     exerciseID: slot.exercise.flatMap { exerciseIDs[$0.persistentModelID] },
@@ -325,6 +329,7 @@ enum DataBackup {
             context.insert(plan)
             for dayRecord in record.days {
                 let day = PlanDay(name: dayRecord.name, order: dayRecord.order)
+                day.weeklyFrequency = dayRecord.timesPerWeek.map { min(max($0, 1), 7) }
                 context.insert(day)
                 plan.days.append(day)
                 planDaysByID[dayRecord.id] = day

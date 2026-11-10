@@ -50,6 +50,11 @@ final class WorkoutPlan {
         days.sorted { $0.order < $1.order }
     }
 
+    /// Training days a week: every day's `timesPerWeek` added up.
+    var daysPerWeek: Int {
+        days.reduce(0) { $0 + $1.timesPerWeek }
+    }
+
     var status: PlanStatus {
         guard startedAt != nil else { return .notStarted }
         return endedAt == nil ? .active : .ended

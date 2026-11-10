@@ -6,7 +6,7 @@ iOS workout tracker for progressive overload. Lets the user log sets per exercis
 
 ## Build & Run
 
-**Tests:** `PLogTests` (an XCTest bundle hosted in the app) holds `DashboardStatsTests`. It checks that the cached dashboard figures match a full rebuild after edits, adds and deletes, and it times a full build and a cached rebuild over two years of generated history. Run it after touching `SessionRecord`, `DashboardStats` or `WorkoutStats`.
+**Tests:** `PLogTests` (an XCTest bundle hosted in the app) holds `DashboardStatsTests` (and `PlanVolumeTests` for the plan's weekly sets). It checks that the cached dashboard figures match a full rebuild after edits, adds and deletes, and it times a full build and a cached rebuild over two years of generated history. Run it after touching `SessionRecord`, `DashboardStats` or `WorkoutStats`.
 
 **Do not run `xcodebuild` directly.** Use the `BuildProject` MCP tool to build, and `XcodeRefreshCodeIssuesInFile` for fast per-file diagnostics without a full build.
 
@@ -38,7 +38,7 @@ PLog/                        ← repo root
     │   ├── ExerciseEntry.swift      ← exercise-within-a-day join record
     │   ├── SetEntry.swift           ← individual set (weight, reps, RPE, isDrop)
     │   ├── WorkoutPlan.swift        ← a program: name, startedAt/endedAt, day templates
-    │   ├── PlanDay.swift            ← one day template ("Push Day") with exercise slots
+    │   ├── PlanDay.swift            ← one day template ("Push Day"): exercise slots, times a week
     │   ├── PlanExercise.swift       ← slot: exercise + targetSets × targetReps
     │   ├── PlanStatus.swift         ← notStarted / active / ended (nonisolated enum)
     │   ├── UserProfile.swift        ← the user's own details; singleton (ensureExists(in:))
@@ -89,8 +89,9 @@ PLog/                        ← repo root
     │   ├── Plans/
     │   │   ├── PlanListView.swift       ← Plans tab: owns its stack; declares PlanRoute enum
     │   │   ├── WorkoutPlanRow.swift     ← plan row + PlanStatusPill
-    │   │   ├── PlanDetailView.swift     ← name, Start/End button, day list, link to log
-    │   │   ├── PlanDayDetailView.swift  ← day template: name + exercise slots
+    │   │   ├── PlanDetailView.swift     ← name, Start/End button, day list, link to log, Weekly Sets section
+    │   │   ├── PlanWeeklySetsView.swift ← plan's weekly sets per muscle: the plan-detail section + the pushed Weekly Sets screen
+    │   │   ├── PlanDayDetailView.swift  ← day template: name, times-a-week stepper, exercise slots
     │   │   ├── PlanExerciseRow.swift    ← slot row with sets/reps steppers
     │   │   ├── PlanSupersetRow.swift    ← a superset merged into one row: shared Rounds stepper + reps per exercise
     │   │   └── PlanLogView.swift        ← date-by-date log with Rest Day gaps, "Up Next"
@@ -106,6 +107,7 @@ PLog/                        ← repo root
         ├── WorkoutHistory.swift      ← read-only helpers: previousEntry, historyPoints
         ├── WorkoutLogger.swift       ← stamps a PlanDay into a WorkoutDay; suggestedNextDay
         ├── WorkoutCalendar.swift     ← month grid cells + trained/rest/pending/inactive status
+        ├── PlanVolume.swift          ← planned weekly sets per muscle group for a plan, + the "reach 10" suggestion
         ├── WorkoutStats.swift        ← analytics aggregations: volume, weekly, split, streak, best lifts
         ├── DashboardStats.swift      ← every Progress widget figure, built once outside `body` (see below)
         ├── SessionRecord.swift       ← plain-value copy of a session + SessionRecordCache (incremental re-read)
@@ -279,6 +281,12 @@ Every Progress card is a widget: a `DashboardWidget` row (kind, order, `rangeWee
 - **Best Lifts** expands the way Activity does: the whole card pushes `BestLiftsView`, which opens on the top lift (marked with `BestBadge`), shows it with the shared `ExerciseHistoryChart` and metric picker, lists every lift ranked beneath to pick from, and has an always-visible search over the whole library (unlogged exercises show "Not logged" and the "No History Yet" empty view). `isSearching`/`dismissSearch` are read in a child view (`BestLiftsContent`) because they only exist beneath `.searchable`.
 - Empty states inside widgets (no regressions, no lifts, no history, deleted exercise) are `ContentUnavailableView`s, as everywhere else.
 
+### A plan's weekly sets
+
+`PlanVolume.summary(for:)` (`Utilities/PlanVolume.swift`) is the planned counterpart of `WorkoutStats.muscleGroupSplit`: each slot's `targetSets` count fully for its exercise's primary groups and as `secondarySetWeight` for secondary ones, judged against `HypertrophyTarget`. Each day counts `PlanDay.timesPerWeek` times, set with the "Times a week" stepper on `PlanDayDetailView` (1–7). The stored `weeklyFrequency` is optional: `nil` (every older day, and a new one) reads as once. It's copied by `duplicate` and carried in backup v7. `WorkoutPlan.daysPerWeek` is the sum over its days. A plan-wide "days a week" setting was tried first and dropped: on a 3-day rotation, 4 days spread the extra session over every day (1.33× each), which said nothing about which day repeats and gave figures like 9.3 that no real week has. Per day, the user picks which day repeats and every figure is whole (or .5 from secondary muscles, via `PlanVolume.setString`). Train's "Up Next" still rotates through the days in order; it doesn't follow `timesPerWeek`. The day list on `PlanDetailView` prefixes a repeating day with "2× a week ·".
+
+`PlanWeeklySetsSection` sits at the bottom of `PlanDetailView` (total, share bar, on-target/below/high pills, a two-column grid of every target group) and pushes `PlanRoute.weeklySets` → `PlanWeeklySetsView`: one `DisclosureGroup` per group whose content lists the slots its sets come from, each with a sets stepper bound to the slot (a superset member steps the whole superset's rounds, like `PlanSupersetRow`). Each slot's caption names its day ("Push Day ×2 · 8 a week"). Below target, the biggest primary slot's caption says "Add n to reach 10" (n divided by how often its day runs); a group fed only by half-sets says "Add a <group> exercise to reach 10" instead. Row order is frozen when the screen opens, so a row doesn't jump while its sets are stepped. Badges there use `VolumeStatusBadge(compact: true)` ("Below"/"High") so long names fit on one line. `TargetBandBar` and the share bar draw in a `Canvas` (no `GeometryReader`): a held stepper redraws every row each tick. The summary itself costs ~0.5 ms even for a 70-slot plan (`PlanVolumeTests.testSummaryTiming`).
+
 ### Muscle groups and the hypertrophy target
 
 `WorkoutStats.muscleGroupSplit(workouts:weeks:)` (working sets per `MuscleGroup` over the last *n* weeks, including this one) is the single aggregation behind both the Muscle Groups card and `MuscleGroupsView`. Don't recompute the split elsewhere, or the card and its detail screen will disagree. The detail screen offers "This Week" plus the widget's three ranges. Weekly sets are the range total ÷ weeks, so a range average includes the current, unfinished week (the footer says so). `HypertrophyTarget` (bottom of `WorkoutStats.swift`) holds the thresholds as named constants: `minimumWeeklySets` 10 (met at ≥ 10) and `highWeeklySets` 30 (high above 30). It also decides which groups the target applies to: Cardio, Full Body and Other aren't one muscle, so they only appear when trained, without a badge. `VolumeStatusBadge` follows the `TrendBadge` colour rule.
@@ -316,7 +324,7 @@ Two lanes, matching how Apple's own apps behave — pick one per screen, never m
 
 ### Data export / import is a JSON snapshot, not the SwiftData store
 
-`DataBackup` (`Utilities/DataBackup.swift`) serialises the whole object graph to one `PLogBackup` JSON document (ISO-8601 dates, pretty-printed) and restores it. Cross-references (`PlanExercise.exercise`, `ExerciseEntry.exercise`, `WorkoutDay.planDay`) are written as **export-time UUIDs** — `PersistentIdentifier` is not stable across stores, so it never appears in the file. `PLogBackup.currentVersion` (6) is stamped into every file; `decode` refuses a newer version with a clear message. Version 4 added the optional `dashboard` widget list (kind raw value, order, range, exercise UUID); a file without it (v1–3) restores the default layout, and a widget kind the build doesn't know is skipped. Version 5 added an optional `size` per widget; a v4 file (or an unknown size) gives each widget its kind's default size. Version 6 added optional `additionalPrimary` / `secondary` muscle-group lists per exercise; a v1–5 file restores each exercise with only its `category`. Restore stores the packed order. **Bump the version and add a migration branch in `decode` when a record's shape changes** — don't silently add required fields.
+`DataBackup` (`Utilities/DataBackup.swift`) serialises the whole object graph to one `PLogBackup` JSON document (ISO-8601 dates, pretty-printed) and restores it. Cross-references (`PlanExercise.exercise`, `ExerciseEntry.exercise`, `WorkoutDay.planDay`) are written as **export-time UUIDs** — `PersistentIdentifier` is not stable across stores, so it never appears in the file. `PLogBackup.currentVersion` (6) is stamped into every file; `decode` refuses a newer version with a clear message. Version 4 added the optional `dashboard` widget list (kind raw value, order, range, exercise UUID); a file without it (v1–3) restores the default layout, and a widget kind the build doesn't know is skipped. Version 5 added an optional `size` per widget; a v4 file (or an unknown size) gives each widget its kind's default size. Version 6 added optional `additionalPrimary` / `secondary` muscle-group lists per exercise; a v1–5 file restores each exercise with only its `category`. Version 7 added an optional `timesPerWeek` per plan day; absent, the day runs once a week. Restore stores the packed order. **Bump the version and add a migration branch in `decode` when a record's shape changes** — don't silently add required fields.
 
 **Import is replace-all, never merge.** `restore` deletes sessions → plans → exercises (in that order so cascade/nullify rules never leave dangling links), then re-inserts everything appending from the to-many side per the relationship rule above. The `UserProfile` row is updated in place so the singleton guarantee holds. `DataTransferSection` (Settings → Data) parses the picked file first and shows counts in a "Replace All Data?" `.alert` before anything is touched. Enum raw values that no longer decode (`MuscleGroup`, `Gender`) fall back to `.other`/`.female` rather than failing the import.
 
