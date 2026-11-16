@@ -40,7 +40,12 @@ struct SetRow: View {
 
     var body: some View {
         DisclosureGroup(isExpanded: $isExpanded) {
-            VStack(spacing: 16) {
+            // Each part is its own child row, with the separators between them hidden so they
+            // read as one editor. They were one stacked row at first: when the hint wrapped to
+            // a second line the List still sized the row for one, and the squeeze came out of
+            // the weight stepper, whose number shrank (it has a `minimumScaleFactor`).
+            let hint = context.previous.flatMap { $0.reps > 0 ? self.hint(for: $0) : nil }
+            Group {
                 // Side by side, stacked only at accessibility type sizes. Not `ViewThatFits`:
                 // it judges by *ideal* width and ignores the number's `minimumScaleFactor`,
                 // so a wider value like 102.5 silently tipped the pair into the stack.
@@ -51,20 +56,25 @@ struct SetRow: View {
                         HStack(alignment: .top, spacing: 16) { steppers }
                     }
                 }
+                .padding(.top, 8)
+                .padding(.bottom, tracksEffort || hint != nil ? 0 : 8)
+                .listRowSeparator(tracksEffort || hint != nil ? .hidden : .automatic, edges: .bottom)
+
                 if tracksEffort {
                     effortPicker
+                        .padding(.bottom, hint != nil ? 0 : 8)
+                        .listRowSeparator(hint != nil ? .hidden : .automatic, edges: .bottom)
                 }
-                if let previous = context.previous, previous.reps > 0 {
-                    Text(hint(for: previous))
+                if let hint {
+                    Text(hint)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.bottom, 4)
                 }
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
-            // The steppers are a child row of the set; a swipe there must not delete the set.
+            // These are child rows of the set; a swipe there must not delete the set.
             .deleteDisabled(true)
         } label: {
             summary
@@ -207,13 +217,14 @@ struct SetRow: View {
         return text
     }
 
-    /// "Last time 60 kg × 8. Beat it with 60 × 9 or 62.5 × 7."
+    /// "Last time 60 kg × 8" over "Beat it with 60 × 9 or 62.5 × 7".
     private func hint(for previous: SetSnapshot) -> String {
         let last = "Last time \(ProgressiveOverload.setLabel(previous, unit: unit))"
         let targets = ProgressiveOverload.targets(toBeat: previous, step: unit.loadStep)
             .map { ProgressiveOverload.shortSetLabel($0) }
-        guard !targets.isEmpty else { return "\(last)." }
-        return "\(last). Beat it with \(targets.joined(separator: " or "))."
+        guard !targets.isEmpty else { return last }
+        // Two lines, so a long pair of targets wraps as a whole rather than orphaning "× 7".
+        return "\(last)\nBeat it with \(targets.joined(separator: " or "))"
     }
 
     /// One sentence for VoiceOver in place of the row's separate fragments.

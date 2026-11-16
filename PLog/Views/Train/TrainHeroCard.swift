@@ -102,7 +102,7 @@ struct TrainHeroCard: View {
             Label("Different day", systemImage: "chevron.down")
                 .labelStyle(.titleAndIconTrailing)
                 .font(.subheadline.weight(.medium))
-                .frame(maxWidth: .infinity, minHeight: 32)
+                .frame(maxWidth: .infinity, minHeight: 44)
                 .contentShape(Rectangle())
         }
     }
@@ -126,7 +126,7 @@ struct TrainHeroCard: View {
         Button(action: onBlankWorkout) {
             Text("Log a Blank Workout")
                 .font(.subheadline.weight(.medium))
-                .frame(maxWidth: .infinity, minHeight: 32)
+                .frame(maxWidth: .infinity, minHeight: 44)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)

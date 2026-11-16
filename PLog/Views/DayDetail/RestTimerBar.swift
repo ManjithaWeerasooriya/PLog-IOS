@@ -30,6 +30,10 @@ struct RestTimerBar: View {
         .overlay(Capsule().strokeBorder(.separator.opacity(0.6)))
         .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
         .padding(.bottom, 8)
+        // A floating control over the list, like the tab bar beneath it: it grows with the
+        // text size up to a point, then holds, or at the largest sizes it would cover the
+        // sets it sits above.
+        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
         .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: timer.isRunning)
         .sensoryFeedback(.impact(weight: .light), trigger: timer.isRunning)
     }
