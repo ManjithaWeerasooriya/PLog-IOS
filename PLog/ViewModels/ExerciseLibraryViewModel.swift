@@ -44,7 +44,7 @@ final class ExerciseLibraryViewModel {
         guard !trimmed.isEmpty else { return nil }
         let exercise = Exercise(name: trimmed, category: category)
         context.insert(exercise)
-        try? context.save()
+        context.saveLogged()
         return exercise
     }
 
@@ -52,6 +52,6 @@ final class ExerciseLibraryViewModel {
     /// (the relationship nullifies rather than cascades).
     func delete(_ exercise: Exercise) {
         context.delete(exercise)
-        try? context.save()
+        context.saveLogged()
     }
 }

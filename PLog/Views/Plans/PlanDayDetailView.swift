@@ -94,7 +94,7 @@ struct PlanDayDetailView: View {
                 .onDelete { offsets in delete(offsets.flatMap { blocks[$0].members }) }
                 .onMove { source, destination in
                     Supersets.moveBlocks(in: day.orderedExercises, from: source, to: destination)
-                    try? context.save()
+                    context.saveLogged()
                 }
             } header: {
                 Text("Exercises")
@@ -136,7 +136,7 @@ struct PlanDayDetailView: View {
 
     private func changeSupersets(_ change: () -> Void) {
         withAnimation(.snappy, change)
-        try? context.save()
+        context.saveLogged()
     }
 
     /// Appends through `day.exercises` (not by setting `slot.planDay`) so Observation fires
@@ -152,7 +152,7 @@ struct PlanDayDetailView: View {
             Supersets.insert(slot, joining: supersetAnchor, in: day.orderedExercises)
             withAnimation(.snappy) { expandedSlotID = supersetAnchor.first.persistentModelID }
         }
-        try? context.save()
+        context.saveLogged()
     }
 
     private func delete(_ doomed: [PlanExercise]) {
@@ -164,7 +164,7 @@ struct PlanDayDetailView: View {
         Supersets.renumber(remaining)
         // A deleted slot's superset partner may now be on its own.
         Supersets.normalize(remaining)
-        try? context.save()
+        context.saveLogged()
     }
 }
 

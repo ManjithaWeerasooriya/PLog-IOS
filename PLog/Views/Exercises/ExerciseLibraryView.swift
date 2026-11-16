@@ -210,7 +210,7 @@ struct ExerciseLibraryView: View {
     private func confirmDelete(_ exercise: Exercise) {
         context.delete(exercise)
         pendingDeleteExercise = nil
-        try? context.save()
+        context.saveLogged()
     }
 
     private var deleteConfirmationTitle: String {

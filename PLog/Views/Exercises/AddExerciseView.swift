@@ -124,13 +124,13 @@ struct AddExerciseView: View {
             exercise.name = trimmedName
             exercise.setMuscles(primary: primary, secondary: secondary)
             exercise.notes = notes
-            try? context.save()
+            context.saveLogged()
             onCreate?(exercise)
         } else {
             let created = Exercise(name: trimmedName, notes: notes)
             created.setMuscles(primary: primary, secondary: secondary)
             context.insert(created)
-            try? context.save()
+            context.saveLogged()
             onCreate?(created)
         }
         dismiss()

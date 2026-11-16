@@ -15,41 +15,40 @@ struct PLogApp: App {
     /// sync automatically.
     @AppStorage("appTheme") private var appTheme = AppTheme.system
 
-    /// The app-wide SwiftData container. Listing every model is explicit and future-proof;
-    /// SwiftData wires up the relationships from here.
-    let container: ModelContainer = {
-        let schema = Schema([
-            WorkoutDay.self,
-            Exercise.self,
-            ExerciseEntry.self,
-            SetEntry.self,
-            WorkoutPlan.self,
-            PlanDay.self,
-            PlanExercise.self,
-            UserProfile.self,
-            Dashboard.self,
-            DashboardWidget.self,
-        ])
-        do {
-            let container = try ModelContainer(for: schema)
-            // First launch only: a starter exercise library and sample plans to log against.
-            StarterData.seedIfNeeded(in: container.mainContext)
-            // Always: guarantees exactly one UserProfile row exists for Settings to edit.
-            UserProfile.ensureExists(in: container.mainContext)
-            // Always: the Progress layout, seeded with the default widgets for new and
-            // pre-widget stores alike.
-            Dashboard.ensureExists(in: container.mainContext)
-            return container
-        } catch {
-            fatalError("Failed to create ModelContainer: \(error)")
-        }
-    }()
+    /// kg or lb. Read here and handed down through the environment so every screen,
+    /// including sheets, redraws when it changes.
+    @AppStorage(WeightUnit.storageKey) private var weightUnit = WeightUnit.kg
+
+    /// The app-wide SwiftData container, or why it couldn't be opened — see `AppStore.open`.
+    private let launch = AppStore.open()
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .preferredColorScheme(appTheme.colorScheme)
+            Group {
+                switch launch {
+                case .ready(let container):
+                    ContentView()
+                        .modelContainer(container)
+                case .failed(let message):
+                    StoreUnavailableView(message: message)
+                }
+            }
+            .environment(\.weightUnit, weightUnit)
+            .preferredColorScheme(appTheme.colorScheme)
         }
-        .modelContainer(container)
+    }
+}
+
+/// Shown instead of the app when the store can't be opened. Says what happened and that
+/// nothing was deleted, which a crash on launch never could.
+private struct StoreUnavailableView: View {
+    let message: String
+
+    var body: some View {
+        ContentUnavailableView {
+            Label("Can't Open Your Data", systemImage: "externaldrive.badge.exclamationmark")
+        } description: {
+            Text("PLog couldn't open its workout store, so it stopped rather than risk your data. Nothing has been deleted. Restart your iPhone and open PLog again; if you're low on storage, free some space first.\n\n\(message)")
+        }
     }
 }

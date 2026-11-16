@@ -365,7 +365,7 @@ extension Dashboard {
         let dashboard = Dashboard()
         context.insert(dashboard)
         dashboard.addDefaultWidgets(in: context)
-        try? context.save()
+        context.saveLogged()
     }
 
     /// Appends the default widgets (callers clear the dashboard first when replacing it).

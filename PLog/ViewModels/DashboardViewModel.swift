@@ -77,6 +77,6 @@ final class DashboardViewModel {
     }
 
     private func save() {
-        try? context.save()
+        context.saveLogged()
     }
 }

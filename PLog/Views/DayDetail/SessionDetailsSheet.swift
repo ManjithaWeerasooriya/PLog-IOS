@@ -107,7 +107,7 @@ struct SessionDetailsSheet: View {
         day.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         day.date = date
         day.notes = notes
-        try? context.save()
+        context.saveLogged()
         dismiss()
     }
 }

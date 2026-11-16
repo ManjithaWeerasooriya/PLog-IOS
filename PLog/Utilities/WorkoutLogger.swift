@@ -64,7 +64,7 @@ enum WorkoutLogger {
         // A skipped slot (its exercise was deleted) can leave a superset partner on its own.
         Supersets.normalize(day.orderedEntries)
 
-        try? context.save()
+        context.saveLogged()
         return day
     }
 }

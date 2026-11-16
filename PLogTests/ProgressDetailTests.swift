@@ -142,15 +142,7 @@ final class ProgressDetailTests: XCTestCase {
     // MARK: - Helpers
 
     private func makeContext() throws -> ModelContext {
-        let schema = Schema([
-            WorkoutDay.self, Exercise.self, ExerciseEntry.self, SetEntry.self,
-            WorkoutPlan.self, PlanDay.self, PlanExercise.self,
-            UserProfile.self, Dashboard.self, DashboardWidget.self,
-        ])
-        let container = try ModelContainer(
-            for: schema,
-            configurations: ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-        )
+        let container = try AppStore.inMemoryContainer()
         // Keep the container alive for the test: the context only holds it weakly.
         containers.append(container)
         return container.mainContext

@@ -45,6 +45,6 @@ extension UserProfile {
         let count = (try? context.fetchCount(FetchDescriptor<UserProfile>())) ?? 0
         guard count == 0 else { return }
         context.insert(UserProfile())
-        try? context.save()
+        context.saveLogged()
     }
 }
