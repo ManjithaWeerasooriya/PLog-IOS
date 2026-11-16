@@ -22,6 +22,7 @@ struct TrainView: View {
     /// Navigation path so we can push a freshly-created session straight into its detail screen.
     @State private var path: [WorkoutDay] = []
     @State private var showingSettings = false
+    @State private var showingPrograms = false
     @State private var pendingDeleteDays: [WorkoutDay] = []
     @State private var showingDeleteConfirmation = false
 
@@ -51,13 +52,14 @@ struct TrainView: View {
                         todaysSession: todaysSession,
                         onLog: log,
                         onBlankWorkout: startBlankWorkout,
-                        onOpenToday: { path.append($0) }
+                        onOpenToday: { path.append($0) },
+                        onChooseProgram: { showingPrograms = true }
                     )
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
                 } footer: {
                     if days.isEmpty {
-                        Text("Your sessions will appear here.")
+                        Text("Workouts you log are listed here, newest first.")
                             .frame(maxWidth: .infinity)
                     }
                 }
@@ -76,6 +78,9 @@ struct TrainView: View {
             }
             .sheet(isPresented: $showingSettings) {
                 SettingsView()
+            }
+            .sheet(isPresented: $showingPrograms) {
+                PlanTemplateGallery(startsPlan: true)
             }
             // `.alert`, not `.confirmationDialog` — see AGENT.md on destructive confirmations.
             .alert(deleteConfirmationTitle, isPresented: $showingDeleteConfirmation) {
@@ -137,7 +142,7 @@ struct TrainView: View {
     private func startBlankWorkout() {
         let day = WorkoutDay(date: .now, name: "New Workout")
         context.insert(day)
-        try? context.save()
+        context.saveLogged()
         path.append(day)
     }
 
@@ -152,7 +157,7 @@ struct TrainView: View {
             context.delete(day)
         }
         pendingDeleteDays = []
-        try? context.save()
+        context.saveLogged()
     }
 
     private var deleteConfirmationTitle: String {

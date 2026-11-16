@@ -17,7 +17,11 @@ enum DebugHistory {
     /// active plan (or any plan with days). Returns how many sessions it added.
     @discardableResult
     static func generate(weeks: Int = 104, in context: ModelContext) -> Int {
-        let plans = (try? context.fetch(FetchDescriptor<WorkoutPlan>())) ?? []
+        var plans = (try? context.fetch(FetchDescriptor<WorkoutPlan>())) ?? []
+        if plans.isEmpty {
+            // Nothing to log from on a store that skipped the welcome sheet: use a program.
+            plans = [PlanTemplate.pushPullLegs.install(in: context, start: true)]
+        }
         guard let plan = plans.first(where: \.isActive) ?? plans.first(where: { !$0.days.isEmpty }) else {
             return 0
         }
@@ -67,8 +71,20 @@ enum DebugHistory {
                 added += 1
             }
         }
-        try? context.save()
+        addBodyWeights(endingAt: today, in: context, calendar: calendar)
+        context.saveLogged()
         return added
+    }
+
+    /// Half a year of weekly weigh-ins drifting down a few kilos, unless a log already exists.
+    private static func addBodyWeights(endingAt today: Date, in context: ModelContext, calendar: Calendar) {
+        let existing = (try? context.fetchCount(FetchDescriptor<BodyWeightEntry>())) ?? 0
+        guard existing < 2 else { return }
+        for week in 0..<26 {
+            guard let date = calendar.date(byAdding: .day, value: -7 * (25 - week), to: today) else { continue }
+            let weight = 78 - Double(week) * 0.12 + Double((week * 5) % 4 - 2) * 0.2
+            BodyWeightLog.record((weight * 10).rounded() / 10, on: date, in: context, calendar: calendar)
+        }
     }
 
     /// A rough starting working weight for the starter library's exercises.

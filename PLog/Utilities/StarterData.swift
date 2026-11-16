@@ -2,9 +2,10 @@
 //  StarterData.swift
 //  PLog
 //
-//  Seeds a starter exercise library and two sample plans the first time the app runs with an
-//  empty store, so there's something to log against straight away. Separate from
-//  `SampleData`, which is the in-memory preview fixture (and also seeds workout history).
+//  The starter exercise library, seeded the first time the app runs with an empty store so
+//  there's something to log against straight away. Plans are no longer seeded: a new user
+//  picks a ready-made program on the welcome sheet (see `PlanTemplate`) or builds their
+//  own. Separate from `SampleData`, the in-memory preview fixture.
 //
 
 import Foundation
@@ -12,106 +13,158 @@ import SwiftData
 
 @MainActor
 enum StarterData {
-    /// Seeds only when the store has no exercises at all, so it never touches real data.
-    static func seedIfNeeded(in context: ModelContext) {
-        let existing = (try? context.fetchCount(FetchDescriptor<Exercise>())) ?? 0
-        guard existing == 0 else { return }
-        seed(into: context)
-    }
+    /// One library exercise: its name and muscle groups.
+    struct Definition {
+        let name: String
+        let primary: Set<MuscleGroup>
+        let secondary: Set<MuscleGroup>
 
-    private static func seed(into context: ModelContext) {
-        // Master exercise library: name, primary groups, secondary groups.
-        let library: [(String, Set<MuscleGroup>, Set<MuscleGroup>)] = [
-            ("Bench Press", [.chest], [.triceps, .shoulders]),
-            ("Incline Dumbbell Press", [.chest], [.shoulders, .triceps]),
-            ("Cable Fly", [.chest], []),
-            ("Deadlift", [.back, .hamstrings], [.glutes, .traps, .forearms]),
-            ("Barbell Row", [.back], [.biceps, .rearDelts]),
-            ("Lat Pulldown", [.back], [.biceps]),
-            ("Seated Cable Row", [.back], [.biceps, .rearDelts]),
-            ("Back Squat", [.quads, .glutes], [.hamstrings, .core]),
-            ("Romanian Deadlift", [.hamstrings], [.glutes, .back]),
-            ("Leg Press", [.quads], [.glutes]),
-            ("Leg Curl", [.hamstrings], []),
-            ("Calf Raise", [.calves], []),
-            ("Overhead Press", [.shoulders], [.triceps]),
-            ("Lateral Raise", [.shoulders], []),
-            ("Face Pull", [.rearDelts], [.traps]),
-            ("Bicep Curl", [.biceps], [.forearms]),
-            ("Hammer Curl", [.biceps], [.forearms]),
-            ("Tricep Pushdown", [.triceps], []),
-            ("Plank", [.core], []),
-            ("Hanging Leg Raise", [.core], []),
-        ]
-        var exercises: [String: Exercise] = [:]
-        for (name, primary, secondary) in library {
-            let exercise = Exercise(name: name)
-            exercise.setMuscles(primary: primary, secondary: secondary)
-            context.insert(exercise)
-            exercises[name] = exercise
+        init(_ name: String, _ primary: Set<MuscleGroup>, _ secondary: Set<MuscleGroup> = []) {
+            self.name = name
+            self.primary = primary
+            self.secondary = secondary
         }
-
-        // An active Push / Pull / Legs plan — the one the Logs tab will offer right away.
-        let ppl = makePlan(
-            named: "Push / Pull / Legs",
-            days: [
-                ("Push Day", [("Bench Press", 4, 8), ("Incline Dumbbell Press", 3, 10),
-                              ("Overhead Press", 3, 8), ("Lateral Raise", 3, 15), ("Tricep Pushdown", 3, 12)]),
-                ("Pull Day", [("Deadlift", 3, 5), ("Lat Pulldown", 3, 10), ("Barbell Row", 3, 8),
-                              ("Face Pull", 3, 15), ("Bicep Curl", 3, 12)]),
-                ("Leg Day", [("Back Squat", 4, 6), ("Romanian Deadlift", 3, 8), ("Leg Press", 3, 12),
-                             ("Leg Curl", 3, 12), ("Calf Raise", 4, 15)]),
-            ],
-            exercises: exercises,
-            in: context
-        )
-        ppl.startedAt = .now
-
-        // A second, not-started plan so the "only one active plan" rule can be exercised.
-        makePlan(
-            named: "Upper / Lower",
-            days: [
-                ("Upper Day", [("Bench Press", 3, 8), ("Barbell Row", 3, 8),
-                               ("Overhead Press", 3, 10), ("Lat Pulldown", 3, 10), ("Hammer Curl", 3, 12)]),
-                ("Lower Day", [("Back Squat", 3, 6), ("Romanian Deadlift", 3, 10),
-                               ("Leg Press", 3, 12), ("Calf Raise", 3, 15), ("Plank", 3, 1)]),
-            ],
-            exercises: exercises,
-            in: context
-        )
-
-        try? context.save()
     }
 
-    /// Builds a plan with its day templates and slots, appending through the to-many side
-    /// so Observation fires on the parents.
+    /// Seeds only when the store has no exercises at all, so it never touches real data.
+    /// Returns whether it seeded, which is how the app knows this is a brand-new install.
     @discardableResult
-    private static func makePlan(
-        named name: String,
-        days: [(name: String, slots: [(exercise: String, sets: Int, reps: Int)])],
-        exercises: [String: Exercise],
-        in context: ModelContext
-    ) -> WorkoutPlan {
-        let plan = WorkoutPlan(name: name)
-        context.insert(plan)
+    static func seedIfNeeded(in context: ModelContext) -> Bool {
+        let existing = (try? context.fetchCount(FetchDescriptor<Exercise>())) ?? 0
+        guard existing == 0 else { return false }
+        for definition in library {
+            insert(definition, into: context)
+        }
+        context.saveLogged()
+        return true
+    }
 
-        for (dayOrder, dayTemplate) in days.enumerated() {
-            let day = PlanDay(name: dayTemplate.name, order: dayOrder)
-            context.insert(day)
-            plan.days.append(day)
+    /// Adds every library exercise the store doesn't already have (matched by name, ignoring
+    /// case), leaving existing ones exactly as they are. Returns how many it added.
+    @discardableResult
+    static func addMissingExercises(in context: ModelContext) -> Int {
+        var known = existingNames(in: context)
+        var added = 0
+        for definition in library where !known.contains(key(definition.name)) {
+            insert(definition, into: context)
+            known.insert(key(definition.name))
+            added += 1
+        }
+        if added > 0 { context.saveLogged() }
+        return added
+    }
 
-            for (slotOrder, slot) in dayTemplate.slots.enumerated() {
-                guard let exercise = exercises[slot.exercise] else { continue }
-                let planExercise = PlanExercise(
-                    exercise: exercise,
-                    order: slotOrder,
-                    targetSets: slot.sets,
-                    targetReps: slot.reps
-                )
-                context.insert(planExercise)
-                day.exercises.append(planExercise)
+    /// The store's exercise with this name, created from the library if it's missing, or as a
+    /// plain "Other" exercise when the library doesn't know the name. Used by plan templates,
+    /// so a program can be added to a store whose library has been edited.
+    static func exercise(named name: String, in context: ModelContext, cache: inout [String: Exercise]) -> Exercise {
+        if cache.isEmpty {
+            let all = (try? context.fetch(FetchDescriptor<Exercise>(sortBy: [SortDescriptor(\.createdAt)]))) ?? []
+            for exercise in all where cache[key(exercise.name)] == nil {
+                cache[key(exercise.name)] = exercise
             }
         }
-        return plan
+        if let found = cache[key(name)] { return found }
+        let definition = library.first { key($0.name) == key(name) } ?? Definition(name, [.other])
+        let created = insert(definition, into: context)
+        cache[key(name)] = created
+        return created
     }
+
+    @discardableResult
+    private static func insert(_ definition: Definition, into context: ModelContext) -> Exercise {
+        let exercise = Exercise(name: definition.name)
+        exercise.setMuscles(primary: definition.primary, secondary: definition.secondary)
+        context.insert(exercise)
+        return exercise
+    }
+
+    private static func existingNames(in context: ModelContext) -> Set<String> {
+        let all = (try? context.fetch(FetchDescriptor<Exercise>())) ?? []
+        return Set(all.map { key($0.name) })
+    }
+
+    private static func key(_ name: String) -> String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    // MARK: - Library
+
+    /// The common gym exercises, each under its most specific muscle group. Secondary groups
+    /// count as half a set in the weekly-set figures, so they're listed only where the
+    /// muscle does real work.
+    static let library: [Definition] = [
+        // Chest
+        Definition("Bench Press", [.chest], [.triceps, .shoulders]),
+        Definition("Incline Bench Press", [.chest], [.shoulders, .triceps]),
+        Definition("Dumbbell Bench Press", [.chest], [.triceps, .shoulders]),
+        Definition("Incline Dumbbell Press", [.chest], [.shoulders, .triceps]),
+        Definition("Machine Chest Press", [.chest], [.triceps, .shoulders]),
+        Definition("Cable Fly", [.chest]),
+        Definition("Pec Deck", [.chest]),
+        Definition("Push-Up", [.chest], [.triceps, .shoulders]),
+        Definition("Dip", [.chest, .triceps], [.shoulders]),
+
+        // Back
+        Definition("Deadlift", [.back, .hamstrings], [.glutes, .traps, .forearms]),
+        Definition("Barbell Row", [.back], [.biceps, .rearDelts]),
+        Definition("Dumbbell Row", [.back], [.biceps, .rearDelts]),
+        Definition("T-Bar Row", [.back], [.biceps, .rearDelts]),
+        Definition("Chest-Supported Row", [.back], [.biceps, .rearDelts]),
+        Definition("Seated Cable Row", [.back], [.biceps, .rearDelts]),
+        Definition("Lat Pulldown", [.back], [.biceps]),
+        Definition("Pull-Up", [.back], [.biceps, .forearms]),
+        Definition("Chin-Up", [.back, .biceps], [.forearms]),
+        Definition("Straight-Arm Pulldown", [.back]),
+
+        // Shoulders
+        Definition("Overhead Press", [.shoulders], [.triceps]),
+        Definition("Dumbbell Shoulder Press", [.shoulders], [.triceps]),
+        Definition("Machine Shoulder Press", [.shoulders], [.triceps]),
+        Definition("Lateral Raise", [.shoulders]),
+        Definition("Cable Lateral Raise", [.shoulders]),
+
+        // Rear delts and traps
+        Definition("Face Pull", [.rearDelts], [.traps]),
+        Definition("Reverse Pec Deck", [.rearDelts], [.traps]),
+        Definition("Rear Delt Fly", [.rearDelts]),
+        Definition("Barbell Shrug", [.traps], [.forearms]),
+        Definition("Dumbbell Shrug", [.traps], [.forearms]),
+
+        // Arms
+        Definition("Bicep Curl", [.biceps], [.forearms]),
+        Definition("Hammer Curl", [.biceps], [.forearms]),
+        Definition("Preacher Curl", [.biceps]),
+        Definition("Incline Dumbbell Curl", [.biceps]),
+        Definition("Cable Curl", [.biceps]),
+        Definition("Tricep Pushdown", [.triceps]),
+        Definition("Overhead Tricep Extension", [.triceps]),
+        Definition("Skull Crusher", [.triceps]),
+        Definition("Close-Grip Bench Press", [.triceps], [.chest, .shoulders]),
+        Definition("Wrist Curl", [.forearms]),
+        Definition("Reverse Curl", [.forearms], [.biceps]),
+
+        // Legs
+        Definition("Back Squat", [.quads, .glutes], [.hamstrings, .core]),
+        Definition("Front Squat", [.quads], [.glutes, .core]),
+        Definition("Hack Squat", [.quads], [.glutes]),
+        Definition("Leg Press", [.quads], [.glutes]),
+        Definition("Leg Extension", [.quads]),
+        Definition("Bulgarian Split Squat", [.quads, .glutes], [.hamstrings]),
+        Definition("Walking Lunge", [.quads, .glutes], [.hamstrings]),
+        Definition("Romanian Deadlift", [.hamstrings], [.glutes, .back]),
+        Definition("Leg Curl", [.hamstrings]),
+        Definition("Seated Leg Curl", [.hamstrings]),
+        Definition("Hip Thrust", [.glutes], [.hamstrings]),
+        Definition("Cable Kickback", [.glutes]),
+        Definition("Hip Abduction", [.glutes]),
+        Definition("Calf Raise", [.calves]),
+        Definition("Seated Calf Raise", [.calves]),
+
+        // Core
+        Definition("Plank", [.core]),
+        Definition("Hanging Leg Raise", [.core]),
+        Definition("Cable Crunch", [.core]),
+        Definition("Ab Wheel Rollout", [.core]),
+    ]
 }

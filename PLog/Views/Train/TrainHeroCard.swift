@@ -4,8 +4,9 @@
 //
 //  The first thing on the Train tab: what to do today. With an active plan it names the
 //  suggested next day and offers one prominent "Start …" button, with the other days and a
-//  blank workout behind a secondary menu. With no plan it offers a blank workout and points
-//  at the Plans tab. The daily action lives on-screen, not behind a toolbar menu.
+//  blank workout behind a secondary menu. With no plan it offers the ready-made programs
+//  first and a blank workout second. Once today's session exists it becomes the way back
+//  into it. The daily action lives on-screen, not behind a toolbar menu.
 //
 
 import SwiftUI
@@ -20,6 +21,8 @@ struct TrainHeroCard: View {
     var onLog: (PlanDay) -> Void
     var onBlankWorkout: () -> Void
     var onOpenToday: (WorkoutDay) -> Void
+    /// Opens the ready-made programs, from the no-plan state.
+    var onChooseProgram: () -> Void = {}
 
     var body: some View {
         AnalyticsCard {
@@ -37,37 +40,38 @@ struct TrainHeroCard: View {
 
     // MARK: - Already logged today
 
+    /// The session itself — what it is and how much is in it — with the way back in. The
+    /// one-a-day rule is a footnote: it used to be the card's whole message.
     @ViewBuilder
     private func loggedTodayContent(_ session: WorkoutDay) -> some View {
-        eyebrow("Today")
-
-        VStack(alignment: .leading, spacing: 4) {
-            Text(session.name.isEmpty ? "Workout Logged" : session.name)
-                .font(.title2.weight(.bold))
-            Text("Only one workout can be logged per day. Delete this one to log a different workout today.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
+        heading(
+            session.name.isEmpty ? "Today's Workout" : session.name,
+            detail: "Today · \(Self.countSummary(exercises: session.entries.count, sets: session.entries.reduce(0) { $0 + $1.workingSets.count }))"
+        )
 
         Button {
             onOpenToday(session)
         } label: {
-            Text("View Today's Workout")
+            Text("Continue Workout")
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(.borderedProminent)
         .controlSize(.large)
+
+        Text("One workout a day. To log a different one today, delete this one first.")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
     }
 
     // MARK: - Active plan
 
     @ViewBuilder
     private func planContent(plan: WorkoutPlan, next: PlanDay) -> some View {
-        eyebrow("Up next · \(plan.name.isEmpty ? "Plan" : plan.name)")
-
         VStack(alignment: .leading, spacing: 4) {
-            Text(next.name.isEmpty ? "Day" : next.name)
-                .font(.title2.weight(.bold))
+            heading(
+                next.name.isEmpty ? "Day" : next.name,
+                detail: "Next in \(plan.name.isEmpty ? "your plan" : plan.name) · \(Self.countSummary(exercises: next.exercises.count, sets: next.exercises.reduce(0) { $0 + $1.targetSets }))"
+            )
             Text(exerciseSummary(for: next))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -98,46 +102,60 @@ struct TrainHeroCard: View {
             Label("Different day", systemImage: "chevron.down")
                 .labelStyle(.titleAndIconTrailing)
                 .font(.subheadline.weight(.medium))
+                .frame(maxWidth: .infinity, minHeight: 32)
+                .contentShape(Rectangle())
         }
-        .frame(maxWidth: .infinity)
     }
 
     // MARK: - No plan
 
     @ViewBuilder
     private var noPlanContent: some View {
-        eyebrow("Today")
+        heading(
+            "No plan yet",
+            detail: "A plan fills in each workout for you: the exercises, the sets, and the weights you used last time."
+        )
 
-        VStack(alignment: .leading, spacing: 4) {
-            Text("No active plan")
-                .font(.title2.weight(.bold))
-            Text("Start one in Plans to have sessions pre-filled.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-
-        Button(action: onBlankWorkout) {
-            Text("Log a Workout")
+        Button(action: onChooseProgram) {
+            Text("Choose a Program")
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(.borderedProminent)
         .controlSize(.large)
+
+        Button(action: onBlankWorkout) {
+            Text("Log a Blank Workout")
+                .font(.subheadline.weight(.medium))
+                .frame(maxWidth: .infinity, minHeight: 32)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
     }
 
     // MARK: - Helpers
 
-    private func eyebrow(_ text: String) -> some View {
-        Text(text)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(.secondary)
-            .textCase(.uppercase)
-            .tracking(0.5)
+    /// The card's title with one line of context under it.
+    private func heading(_ title: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.title2.weight(.bold))
+                .accessibilityAddTraits(.isHeader)
+            Text(detail)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// "5 exercises · 16 sets".
+    static func countSummary(exercises: Int, sets: Int) -> String {
+        guard exercises > 0 else { return "No exercises yet" }
+        return "\(exercises) \(exercises == 1 ? "exercise" : "exercises") · \(sets) \(sets == 1 ? "set" : "sets")"
     }
 
     /// e.g. "Bench Press · Overhead Press · Lateral Raise".
     private func exerciseSummary(for day: PlanDay) -> String {
-        let names = day.orderedExercises.compactMap { $0.exercise?.name }
-        return names.isEmpty ? "No exercises yet" : names.joined(separator: " · ")
+        day.orderedExercises.compactMap { $0.exercise?.name }.joined(separator: " · ")
     }
 }
 

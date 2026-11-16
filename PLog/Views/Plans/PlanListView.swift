@@ -35,6 +35,7 @@ struct PlanListView: View {
     /// Shown instead of the confirmation dialog when a swipe targets the active plan.
     @State private var showingActivePlanBlockedAlert = false
     @State private var showingNewPlan = false
+    @State private var showingPrograms = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -65,8 +66,18 @@ struct PlanListView: View {
             }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        showingNewPlan = true
+                    // Two ways to get a plan: a ready-made program, or an empty one to build.
+                    Menu {
+                        Button {
+                            showingPrograms = true
+                        } label: {
+                            Label("From a Program…", systemImage: "square.stack.3d.up")
+                        }
+                        Button {
+                            showingNewPlan = true
+                        } label: {
+                            Label("Blank Plan", systemImage: "square.and.pencil")
+                        }
                     } label: {
                         Label("New Plan", systemImage: "plus")
                     }
@@ -75,6 +86,9 @@ struct PlanListView: View {
             // Name first, insert on confirm: backing out of the sheet leaves nothing behind.
             .sheet(isPresented: $showingNewPlan) {
                 NameEntrySheet(title: "New Plan", placeholder: "e.g. Push / Pull / Legs", onConfirm: createPlan)
+            }
+            .sheet(isPresented: $showingPrograms) {
+                PlanTemplateGallery(onAdd: { path.append($0) })
             }
             // `.alert` rather than `.confirmationDialog`: the latter renders (at least on
             // this iOS version) as a small anchored callout that latches onto an arbitrary
@@ -143,10 +157,11 @@ struct PlanListView: View {
         ContentUnavailableView {
             Label("No Plans Yet", systemImage: "list.clipboard")
         } description: {
-            Text("Build a plan of days like Push, Pull and Legs, then start it to log against it.")
+            Text("A plan is a rotation of days like Push, Pull and Legs. Start one and each workout opens with its exercises and sets filled in.")
         } actions: {
-            Button("Create a Plan") { showingNewPlan = true }
+            Button("Choose a Program") { showingPrograms = true }
                 .buttonStyle(.borderedProminent)
+            Button("Build My Own") { showingNewPlan = true }
         }
     }
 
@@ -160,7 +175,7 @@ struct PlanListView: View {
     private func createPlan(named name: String) {
         let plan = WorkoutPlan(name: name)
         context.insert(plan)
-        try? context.save()
+        context.saveLogged()
         path.append(plan)
     }
 
@@ -187,7 +202,7 @@ struct PlanListView: View {
             context.delete(plan)
         }
         pendingDeletePlans = []
-        try? context.save()
+        context.saveLogged()
     }
 
     private var deleteConfirmationTitle: String {

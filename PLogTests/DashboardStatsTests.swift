@@ -94,17 +94,10 @@ final class DashboardStatsTests: XCTestCase {
 
     /// The starter library and plans, logged four days a week for two years in memory.
     private func makeHistory() throws -> ModelContainer {
-        let schema = Schema([
-            WorkoutDay.self, Exercise.self, ExerciseEntry.self, SetEntry.self,
-            WorkoutPlan.self, PlanDay.self, PlanExercise.self,
-            UserProfile.self, Dashboard.self, DashboardWidget.self,
-        ])
-        let container = try ModelContainer(
-            for: schema,
-            configurations: ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-        )
+        let container = try AppStore.inMemoryContainer()
         container.mainContext.autosaveEnabled = false
         StarterData.seedIfNeeded(in: container.mainContext)
+        PlanTemplate.pushPullLegs.install(in: container.mainContext, start: true)
         XCTAssertGreaterThan(DebugHistory.generate(in: container.mainContext), 400)
         return container
     }

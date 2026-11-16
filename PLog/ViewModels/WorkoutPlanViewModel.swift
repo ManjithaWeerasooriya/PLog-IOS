@@ -94,7 +94,7 @@ final class WorkoutPlanViewModel {
     }
 
     func save() {
-        try? context.save()
+        context.saveLogged()
     }
 
     // MARK: - Duplication
@@ -126,8 +126,14 @@ final class WorkoutPlanViewModel {
             }
         }
 
-        try? context.save()
+        context.saveLogged()
         return copy
+    }
+
+    /// `name` when no plan has it yet, otherwise the next free "<name> (n)" — so adding the
+    /// same program twice doesn't leave two plans that can't be told apart.
+    static func uniqueName(for name: String, existing: [String]) -> String {
+        existing.contains(name) ? nextCopyName(for: name, existing: existing) : name
     }
 
     /// "PPL" -> "PPL (1)"; if "PPL (1)" is taken, "PPL (2)"; duplicating "PPL (1)" itself
