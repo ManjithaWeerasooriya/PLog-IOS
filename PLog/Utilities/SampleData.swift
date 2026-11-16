@@ -13,21 +13,8 @@ import SwiftData
 enum SampleData {
     /// A shared, in-memory container seeded once for previews.
     static let container: ModelContainer = {
-        let schema = Schema([
-            WorkoutDay.self,
-            Exercise.self,
-            ExerciseEntry.self,
-            SetEntry.self,
-            WorkoutPlan.self,
-            PlanDay.self,
-            PlanExercise.self,
-            UserProfile.self,
-            Dashboard.self,
-            DashboardWidget.self,
-        ])
-        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         do {
-            let container = try ModelContainer(for: schema, configurations: [config])
+            let container = try AppStore.inMemoryContainer()
             seed(into: container.mainContext)
             return container
         } catch {
@@ -60,6 +47,7 @@ enum SampleData {
             workouts: (try? context.fetch(FetchDescriptor<WorkoutDay>(sortBy: [SortDescriptor(\.date, order: .reverse)]))) ?? [],
             plans: (try? context.fetch(FetchDescriptor<WorkoutPlan>())) ?? [],
             bodyWeightKg: 72,
+            bodyWeights: BodyWeightLog.readings((try? context.fetch(FetchDescriptor<BodyWeightEntry>())) ?? []),
             exercises: (try? context.fetch(FetchDescriptor<Exercise>(sortBy: [SortDescriptor(\.name)]))) ?? []
         )
     }
@@ -186,6 +174,12 @@ enum SampleData {
 
         UserProfile.ensureExists(in: context)
 
+        // A few weeks of body weight, so the log and its card have a trend to draw.
+        for (daysAgo, weight) in [(28, 73.4), (21, 73.0), (14, 72.6), (7, 72.5), (0, 72.0)] {
+            let date = calendar.date(byAdding: .day, value: -daysAgo, to: today) ?? today
+            BodyWeightLog.record(weight, on: date, in: context)
+        }
+
         // The default dashboard plus the two widgets that aren't in it, so previews show them.
         Dashboard.ensureExists(in: context)
         if let dashboard = try? context.fetch(FetchDescriptor<Dashboard>()).first {
@@ -198,6 +192,6 @@ enum SampleData {
                 dashboard.widgets.append(widget)
             }
         }
-        try? context.save()
+        context.saveLogged()
     }
 }

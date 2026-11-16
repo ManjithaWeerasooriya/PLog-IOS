@@ -20,11 +20,14 @@ struct DashboardData {
     var workouts: [WorkoutDay]
     var plans: [WorkoutPlan]
     var bodyWeightKg: Double?
+    /// The body-weight log, oldest first; empty when nothing has been logged.
+    var bodyWeights: [BodyWeightLog.Reading] = []
     /// Sorted by name.
     var exercises: [Exercise]
 }
 
 struct DashboardWidgetView: View {
+    @Environment(\.weightUnit) private var unit
     let kind: DashboardWidgetKind
     let stats: DashboardStats
     /// For the trend widgets; the others ignore it.
@@ -149,36 +152,50 @@ struct DashboardWidgetView: View {
         return parts.joined(separator: " · ")
     }
 
-    /// Small: number above the title. Wide: title leading, number trailing.
+    /// Tappable: pushes the body-weight log. Small: number above the title. Wide: title
+    /// leading, number trailing.
     private var bodyWeightCard: some View {
-        AnalyticsCard {
-            if layoutSize == .small {
-                VStack(alignment: .leading, spacing: 12) {
-                    bodyWeightStat
-                    Spacer(minLength: 0)
-                    bodyWeightTitle
+        NavigationLink(value: ProgressRoute.bodyWeight) {
+            AnalyticsCard {
+                if layoutSize == .small {
+                    VStack(alignment: .leading, spacing: 12) {
+                        bodyWeightStat
+                        Spacer(minLength: 0)
+                        bodyWeightTitle
+                    }
+                    .frame(maxHeight: .infinity, alignment: .top)
+                } else {
+                    HStack {
+                        bodyWeightTitle
+                        Spacer()
+                        bodyWeightStat
+                    }
+                    .frame(maxHeight: .infinity)
                 }
-                .frame(maxHeight: .infinity, alignment: .top)
-            } else {
-                HStack {
-                    bodyWeightTitle
-                    Spacer()
-                    bodyWeightStat
-                }
-                .frame(maxHeight: .infinity)
             }
         }
+        .buttonStyle(.plain)
+        .accessibilityHint("Opens your body-weight log")
     }
 
     private var bodyWeightStat: some View {
-        BigStat(value: stats.bodyWeightKg.map { WeightFormatter.string($0) } ?? "—", unit: "kg")
+        BigStat(value: stats.bodyWeightKg.map { WeightFormatter.string($0) } ?? "—", unit: unit.symbol)
     }
 
     private var bodyWeightTitle: some View {
         AnalyticsCardTitle(
             title: "Body weight",
-            subtitle: stats.bodyWeightKg == nil ? "Set it in Settings" : "From your profile"
+            subtitle: bodyWeightSubtitle
         )
+    }
+
+    /// The change over the last month once there are two readings; before that, what to do.
+    private var bodyWeightSubtitle: String {
+        if let change = stats.bodyWeightChange {
+            let sign = change.amount > 0 ? "+" : (change.amount < 0 ? "−" : "")
+            return "\(sign)\(unit.string(abs(change.amount))) since \(change.since.shortDateLabel)"
+        }
+        return stats.bodyWeightKg == nil ? "Tap to log it" : "Latest reading"
     }
 
     // MARK: - Activity grid
@@ -270,7 +287,7 @@ struct DashboardWidgetView: View {
         AnalyticsCard {
             VStack(alignment: .leading, spacing: 12) {
                 cardHeader(title: "Volume lifted", subtitle: "Last 7 days") {
-                    BigStat(value: WeightFormatter.volumeString(last7Volume), unit: "kg", style: .title)
+                    BigStat(value: WeightFormatter.volumeString(last7Volume), unit: unit.symbol, style: .title)
                     if let change = WorkoutStats.percentChange(from: stats.previous7Volume, to: last7Volume) {
                         TrendBadge(
                             trend: change > 0.5 ? .improved : (change < -0.5 ? .regressed : .matched),
@@ -363,7 +380,7 @@ struct DashboardWidgetView: View {
                 cardHeader {
                     trendTitle("Weekly volume")
                 } trailing: {
-                    BigStat(value: WeightFormatter.volumeString(averageWeeklyVolume(weekly)), unit: "kg avg", style: .title2)
+                    BigStat(value: WeightFormatter.volumeString(averageWeeklyVolume(weekly)), unit: "\(unit.symbol) avg", style: .title2)
                 }
                 Chart(weekly) { week in
                     BarMark(
@@ -639,7 +656,7 @@ struct DashboardWidgetView: View {
                                     }
                                     Spacer()
                                     TrendBadge(trend: lift.trend)
-                                    Text("\(WeightFormatter.string(lift.estimatedOneRepMax)) kg")
+                                    Text(unit.string(lift.estimatedOneRepMax))
                                         .font(.subheadline.monospacedDigit())
                                         .foregroundStyle(.primary)
                                 }

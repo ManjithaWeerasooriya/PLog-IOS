@@ -24,6 +24,8 @@ struct DashboardStats {
 
     var workoutCount = 0
     var bodyWeightKg: Double?
+    /// From the body-weight log: latest reading against the one about a month before.
+    var bodyWeightChange: (amount: Double, since: Date)?
     var plan: PlanSummary?
     var thisWeekSessions = 0
     var totalSets = 0
@@ -66,7 +68,8 @@ struct DashboardStats {
         let workouts = data.workouts
 
         workoutCount = records.count
-        bodyWeightKg = data.bodyWeightKg
+        bodyWeightKg = data.bodyWeights.last?.weight ?? data.bodyWeightKg
+        bodyWeightChange = BodyWeightLog.change(in: data.bodyWeights, calendar: calendar)
         plan = data.plans.first(where: \.isActive).map { plan in
             PlanSummary(
                 name: plan.name,

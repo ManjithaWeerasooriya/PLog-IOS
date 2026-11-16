@@ -17,10 +17,11 @@ import SwiftData
 nonisolated struct PLogBackup: Codable {
     /// 2 added `SetRecord.isDrop`; 3 added `supersetID` on entries and plan slots; 4 added
     /// the Progress `dashboard` layout; 5 added each widget's `size`; 6 added each exercise's
-    /// extra primary and secondary muscle groups; 7 added how many times a week each plan day runs.
+    /// extra primary and secondary muscle groups; 7 added how many times a week each plan day runs;
+    /// 8 added the weight unit the numbers are in and the body-weight log.
     /// An older app refuses a newer file rather
     /// than silently dropping what it can't represent.
-    static let currentVersion = 7
+    static let currentVersion = 8
 
     var version: Int = PLogBackup.currentVersion
     var exportedAt: Date
@@ -30,6 +31,16 @@ nonisolated struct PLogBackup: Codable {
     var workouts: [WorkoutRecord]
     /// Absent before version 4 — restored as the default layout.
     var dashboard: [DashboardWidgetRecord]?
+    /// A `WeightUnit` raw value: the unit every weight in the file is in. Absent before
+    /// version 8, when the app only knew kilograms — read as "leave the setting alone".
+    var weightUnit: String?
+    /// Absent before version 8 — read as an empty log.
+    var bodyWeights: [BodyWeightRecord]?
+
+    nonisolated struct BodyWeightRecord: Codable {
+        var date: Date
+        var weight: Double
+    }
 
     nonisolated struct ProfileRecord: Codable {
         var name: String
@@ -152,6 +163,7 @@ enum DataBackup {
         let workouts = try context.fetch(FetchDescriptor<WorkoutDay>(sortBy: [SortDescriptor(\.date)]))
         let profile = try context.fetch(FetchDescriptor<UserProfile>()).first ?? UserProfile()
         let dashboard = try context.fetch(FetchDescriptor<Dashboard>()).first
+        let bodyWeights = try context.fetch(FetchDescriptor<BodyWeightEntry>(sortBy: [SortDescriptor(\.date)]))
 
         var exerciseIDs: [PersistentIdentifier: UUID] = [:]
         for exercise in exercises {
@@ -243,7 +255,9 @@ enum DataBackup {
                     exerciseID: widget.exercise.flatMap { exerciseIDs[$0.persistentModelID] },
                     size: widget.size.rawValue
                 )
-            }
+            },
+            weightUnit: WeightUnit.current.rawValue,
+            bodyWeights: bodyWeights.map { .init(date: $0.date, weight: $0.weight) }
         )
 
         let encoder = JSONEncoder()
@@ -272,8 +286,46 @@ enum DataBackup {
     /// Replaces everything in the store with the backup's contents. Not a merge: the caller
     /// must have confirmed the wipe. The profile and dashboard rows are updated in place so the
     /// singleton guarantees from `UserProfile`/`Dashboard.ensureExists` hold throughout.
-    static func restore(_ backup: PLogBackup, into context: ModelContext) throws {
-        let dashboard = try context.fetch(FetchDescriptor<Dashboard>()).first ?? {
+    ///
+    /// Never half-done: everything that can fail (reading the current rows) happens before
+    /// the first change, and the replace itself can't throw, so the context is either
+    /// untouched or fully replaced when the one save at the end runs. A partial replace is
+    /// the state that must never reach disk — the old code fetched and deleted in turns, so
+    /// a failed fetch midway left one, and autosave would have written it.
+    /// (`context.rollback()` isn't the answer here: it traps in SwiftData when the context
+    /// holds cascade-deleted rows that were never faulted in, which an import always does.)
+    static func restore(_ backup: PLogBackup, into context: ModelContext, defaults: UserDefaults = .standard) throws {
+        let current = try CurrentContents(in: context)
+        replaceContents(current, with: backup, in: context)
+        try context.save()
+        // The numbers are in the unit they were exported in; show them that way.
+        if let unit = backup.weightUnit.flatMap(WeightUnit.init(rawValue:)) {
+            defaults.set(unit.rawValue, forKey: WeightUnit.storageKey)
+        }
+    }
+
+    /// Every row an import replaces, read up front.
+    struct CurrentContents {
+        let dashboard: Dashboard?
+        let profile: UserProfile?
+        let workouts: [WorkoutDay]
+        let plans: [WorkoutPlan]
+        let exercises: [Exercise]
+        let bodyWeights: [BodyWeightEntry]
+
+        init(in context: ModelContext) throws {
+            dashboard = try context.fetch(FetchDescriptor<Dashboard>()).first
+            profile = try context.fetch(FetchDescriptor<UserProfile>()).first
+            workouts = try context.fetch(FetchDescriptor<WorkoutDay>())
+            plans = try context.fetch(FetchDescriptor<WorkoutPlan>())
+            exercises = try context.fetch(FetchDescriptor<Exercise>())
+            bodyWeights = try context.fetch(FetchDescriptor<BodyWeightEntry>())
+        }
+    }
+
+    /// The replace itself. Deliberately not `throws`: see `restore`.
+    static func replaceContents(_ current: CurrentContents, with backup: PLogBackup, in context: ModelContext) {
+        let dashboard = current.dashboard ?? {
             let created = Dashboard()
             context.insert(created)
             return created
@@ -286,11 +338,12 @@ enum DataBackup {
 
         // Sessions first, then plans, then exercises: the cascade/nullify rules mean
         // nothing later in this order still points at something deleted earlier.
-        for day in try context.fetch(FetchDescriptor<WorkoutDay>()) { context.delete(day) }
-        for plan in try context.fetch(FetchDescriptor<WorkoutPlan>()) { context.delete(plan) }
-        for exercise in try context.fetch(FetchDescriptor<Exercise>()) { context.delete(exercise) }
+        for day in current.workouts { context.delete(day) }
+        for plan in current.plans { context.delete(plan) }
+        for exercise in current.exercises { context.delete(exercise) }
+        for reading in current.bodyWeights { context.delete(reading) }
 
-        let profile = try context.fetch(FetchDescriptor<UserProfile>()).first ?? {
+        let profile = current.profile ?? {
             let created = UserProfile()
             context.insert(created)
             return created
@@ -299,7 +352,10 @@ enum DataBackup {
         profile.age = backup.profile.age
         profile.gender = Gender(rawValue: backup.profile.gender) ?? .female
         profile.heightCm = backup.profile.heightCm
-        profile.weightKg = backup.profile.weightKg
+        profile.weightKg = backup.profile.weightKg.map { max($0, 0) }
+        for record in backup.bodyWeights ?? [] where record.weight > 0 {
+            context.insert(BodyWeightEntry(date: record.date, weight: record.weight))
+        }
 
         var exercisesByID: [UUID: Exercise] = [:]
         for record in backup.exercises {
@@ -337,8 +393,8 @@ enum DataBackup {
                     let slot = PlanExercise(
                         exercise: slotRecord.exerciseID.flatMap { exercisesByID[$0] },
                         order: slotRecord.order,
-                        targetSets: slotRecord.targetSets,
-                        targetReps: slotRecord.targetReps,
+                        targetSets: max(slotRecord.targetSets, 0),
+                        targetReps: max(slotRecord.targetReps, 0),
                         supersetID: slotRecord.supersetID
                     )
                     context.insert(slot)
@@ -364,9 +420,10 @@ enum DataBackup {
                 for setRecord in entryRecord.sets {
                     let set = SetEntry(
                         setNumber: setRecord.setNumber,
-                        weight: setRecord.weight,
-                        reps: setRecord.reps,
-                        rpe: setRecord.rpe,
+                        // A hand-edited or damaged file can't put impossible numbers in the log.
+                        weight: setRecord.weight.isFinite ? max(setRecord.weight, 0) : 0,
+                        reps: max(setRecord.reps, 0),
+                        rpe: setRecord.rpe.map { min(max($0, 0), 10) },
                         notes: setRecord.notes,
                         isDrop: setRecord.isDrop ?? false
                     )
@@ -400,7 +457,5 @@ enum DataBackup {
         for (index, widget) in DashboardLayout.packedOrder(dashboard.orderedWidgets).enumerated() {
             widget.order = index
         }
-
-        try context.save()
     }
 }

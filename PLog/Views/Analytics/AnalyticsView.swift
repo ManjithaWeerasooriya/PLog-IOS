@@ -23,6 +23,7 @@ enum ProgressRoute: Hashable {
     /// Opens on the tapped widget's period, so its totals match the card.
     case muscleGroups(MuscleSplitPeriod)
     case regressions
+    case bodyWeight
 }
 
 /// When the dashboard's figures need rebuilding. A plain class, not observed: updating it
@@ -57,6 +58,7 @@ struct AnalyticsView: View {
     @Query(sort: \WorkoutDay.date, order: .reverse) private var workouts: [WorkoutDay]
     @Query private var plans: [WorkoutPlan]
     @Query private var profiles: [UserProfile]
+    @Query(sort: \BodyWeightEntry.date) private var bodyWeights: [BodyWeightEntry]
     @Query(sort: \Exercise.name) private var exercises: [Exercise]
     @Query private var dashboards: [Dashboard]
 
@@ -101,7 +103,7 @@ struct AnalyticsView: View {
                     statsTracker.isVisible = true
                     // Unsaved edits (a set changed just before switching tabs) only reach the
                     // record cache through a save.
-                    if context.hasChanges { try? context.save() }
+                    if context.hasChanges { context.saveLogged() }
                     if statsTracker.isStale { refreshStats() }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave)) { note in
@@ -152,6 +154,8 @@ struct AnalyticsView: View {
                         MuscleGroupsView(period: period)
                     case .regressions:
                         RegressionsView(stats: stats ?? .empty)
+                    case .bodyWeight:
+                        BodyWeightView()
                     }
                 }
                 // The calendar's session rows push through this stack.
@@ -355,9 +359,9 @@ struct AnalyticsView: View {
 
     private var emptyState: some View {
         ContentUnavailableView {
-            Label("No Analytics Yet", systemImage: "chart.bar.xaxis")
+            Label("Nothing to Chart Yet", systemImage: "chart.bar.xaxis")
         } description: {
-            Text("Log a few workouts and your volume, consistency and best lifts will show up here.")
+            Text("After your first workout this shows your weekly sets per muscle, volume, best lifts and how often you train.")
         }
     }
 
@@ -411,7 +415,7 @@ struct AnalyticsView: View {
             get: { widget.muscleSplitPeriod },
             set: { newValue in
                 withAnimation(.snappy) { widget.muscleSplitPeriod = newValue }
-                try? context.save()
+                context.saveLogged()
             }
         )
     }
@@ -421,7 +425,7 @@ struct AnalyticsView: View {
             get: { widget.range },
             set: { newValue in
                 withAnimation(.snappy) { widget.range = newValue }
-                try? context.save()
+                context.saveLogged()
             }
         )
     }
@@ -458,6 +462,7 @@ struct AnalyticsView: View {
             workouts: workouts,
             plans: plans,
             bodyWeightKg: profiles.first?.weightKg,
+            bodyWeights: BodyWeightLog.readings(bodyWeights),
             exercises: exercises
         )
     }
