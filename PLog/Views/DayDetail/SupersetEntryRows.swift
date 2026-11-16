@@ -13,6 +13,7 @@ import SwiftUI
 import SwiftData
 
 struct SupersetEntryRows: View {
+    @Environment(\.weightUnit) private var unit
     @State private var viewModels: [ExerciseEntryViewModel]
 
     /// Controlled by the parent so only one block is expanded at a time — see `DayDetailView`.
@@ -174,11 +175,12 @@ struct SupersetEntryRows: View {
             set: set,
             title: set.isDrop ? model.title(for: set) : model.exerciseName,
             badge: set.isDrop ? nil : item.letter,
-            trend: model.trend(for: set),
+            context: model.context(for: set),
             isExpanded: isSetExpanded(set),
+            onWeightChange: { old, new in model.weightChanged(of: set, from: old, to: new) },
             onAddDrop: {
                 withAnimation(.snappy) {
-                    expandedSetID = model.addDrop(after: set).persistentModelID
+                    expandedSetID = model.addDrop(after: set, unit: unit).persistentModelID
                 }
             },
             onToggleDrop: set.isDrop || model.canConvertToDrop(set)
@@ -191,7 +193,7 @@ struct SupersetEntryRows: View {
     private var addRoundRow: some View {
         Button {
             withAnimation(.snappy) {
-                let added = viewModels.map { $0.addSet() }
+                let added = viewModels.map { $0.addSet(unit: unit) }
                 expandedSetID = added.first?.persistentModelID
             }
         } label: {
@@ -227,7 +229,7 @@ struct SupersetEntryRows: View {
                 letter: Supersets.letter(for: index),
                 name: model.exerciseName,
                 category: model.entry.exercise?.category,
-                detail: model.entry.topWeight > 0 ? "Top: \(WeightFormatter.string(model.entry.topWeight)) kg" : nil
+                detail: model.entry.topWeight > 0 ? "Top: \(unit.string(model.entry.topWeight))" : nil
             )
         }
     }
@@ -236,7 +238,7 @@ struct SupersetEntryRows: View {
     private var lastTime: String? {
         let parts = viewModels.enumerated().compactMap { index, model -> String? in
             guard let previous = model.previousTopSet, previous.reps > 0 else { return nil }
-            return "\(Supersets.letter(for: index)) \(WeightFormatter.string(previous.weight)) kg × \(previous.reps)"
+            return "\(Supersets.letter(for: index)) \(unit.string(previous.weight)) × \(previous.reps)"
         }
         return parts.isEmpty ? nil : "Last time: " + parts.joined(separator: " · ")
     }

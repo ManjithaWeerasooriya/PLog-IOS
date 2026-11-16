@@ -27,6 +27,7 @@ struct ExerciseEntryRows: View {
     var superset: SupersetActions
 
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.weightUnit) private var unit
 
     /// Context is passed in explicitly because `@Environment` isn't available during `init`,
     /// and the view model needs it to insert/delete sets.
@@ -54,12 +55,23 @@ struct ExerciseEntryRows: View {
             headerRow
 
             if isExpanded {
+                if let notes = viewModel.exerciseNotes {
+                    // The exercise's own notes (form cues, machine settings), where they're
+                    // needed: under the name while the exercise is being done.
+                    Label(notes, systemImage: "note.text")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .moveDisabled(true)
+                        .deleteDisabled(true)
+                }
+
                 ForEach(viewModel.sets) { set in
                     SetRow(
                         set: set,
                         title: viewModel.title(for: set),
-                        trend: viewModel.trend(for: set),
+                        context: viewModel.context(for: set),
                         isExpanded: isSetExpanded(set),
+                        onWeightChange: { old, new in viewModel.weightChanged(of: set, from: old, to: new) },
                         onAddDrop: { addDrop(after: set) },
                         onToggleDrop: set.isDrop || viewModel.canConvertToDrop(set)
                             ? { withAnimation(.snappy) { viewModel.toggleDrop(set) } }
@@ -74,7 +86,7 @@ struct ExerciseEntryRows: View {
                 addSetRow
                     .moveDisabled(true)
 
-                if let lastTime = viewModel.lastTimeLabel {
+                if let lastTime = viewModel.lastTimeLabel(unit: unit) {
                     Label(lastTime, systemImage: "clock.arrow.circlepath")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -109,7 +121,7 @@ struct ExerciseEntryRows: View {
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(.primary)
                         if entry.topWeight > 0 {
-                            Text("Top: \(WeightFormatter.string(entry.topWeight)) kg")
+                            Text("Top: \(unit.string(entry.topWeight))")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -177,7 +189,7 @@ struct ExerciseEntryRows: View {
         let count = entry.workingSets.count
         var parts = ["\(count) \(count == 1 ? "set" : "sets")"]
         if entry.topWeight > 0 {
-            parts.append("Top: \(WeightFormatter.string(entry.topWeight)) kg")
+            parts.append("Top: \(unit.string(entry.topWeight))")
         }
         return parts.joined(separator: " · ")
     }
@@ -205,7 +217,7 @@ struct ExerciseEntryRows: View {
     private var addSetButton: some View {
         Button {
             withAnimation(.snappy) {
-                let added = viewModel.addSet()
+                let added = viewModel.addSet(unit: unit)
                 expandedSetID = added.persistentModelID
             }
         } label: {
@@ -237,7 +249,7 @@ struct ExerciseEntryRows: View {
 
     private func addDrop(after set: SetEntry) {
         withAnimation(.snappy) {
-            let added = viewModel.addDrop(after: set)
+            let added = viewModel.addDrop(after: set, unit: unit)
             expandedSetID = added.persistentModelID
         }
     }

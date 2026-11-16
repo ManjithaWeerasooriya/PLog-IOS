@@ -46,7 +46,7 @@ struct SessionRecord: Dated {
             secondaryMuscles = entry.exercise?.secondaryMuscles ?? []
             workingSets = entry.workingSets.count
             volume = entry.totalVolume
-            topSet = sets.max(by: { $0.weight < $1.weight }).map { SetSnapshot(weight: $0.weight, reps: $0.reps) }
+            topSet = WorkoutHistory.topSet(of: sets)
             bestEstimatedOneRepMax = sets
                 .map { SetSnapshot(weight: $0.weight, reps: $0.reps).estimatedOneRepMax }
                 .max() ?? 0

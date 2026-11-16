@@ -15,6 +15,7 @@ struct DayDetailView: View {
     @Environment(\.modelContext) private var context
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.weightUnit) private var unit
 
     let day: WorkoutDay
 
@@ -46,6 +47,13 @@ struct DayDetailView: View {
                 guard let target else { return }
                 withAnimation(.snappy) { proxy.scrollTo(target, anchor: .top) }
                 scrollTarget = nil
+            }
+        }
+        // Today's session gets the rest timer; an old one doesn't, unless a countdown is
+        // already running and the user has wandered back through the log.
+        .safeAreaInset(edge: .bottom) {
+            if showsRestTimer {
+                RestTimerBar()
             }
         }
         .navigationTitle(day.name.isEmpty ? day.date.mediumDayLabel : day.name)
@@ -102,6 +110,10 @@ struct DayDetailView: View {
                     }
             }
         }
+    }
+
+    private var showsRestTimer: Bool {
+        Calendar.current.isDateInToday(day.date) || RestTimer.shared.isRunning
     }
 
     // MARK: - Sections
@@ -214,7 +226,7 @@ struct DayDetailView: View {
 
     private func changeSupersets(_ change: () -> Void) {
         withAnimation(.snappy, change)
-        try? context.save()
+        context.saveLogged()
     }
 
     /// Creates a new entry for the chosen exercise with its first set prefilled from last
@@ -227,8 +239,8 @@ struct DayDetailView: View {
         if let supersetAnchor {
             Supersets.insert(entry, joining: supersetAnchor, in: day.orderedEntries)
         }
-        ExerciseEntryViewModel.prefill(entry, in: context)
-        try? context.save()
+        ExerciseEntryViewModel.prefill(entry, in: context, unit: unit)
+        context.saveLogged()
         let opened = supersetAnchor?.first ?? entry
         withAnimation(.snappy) {
             expandedEntryID = opened.persistentModelID
@@ -243,7 +255,7 @@ struct DayDetailView: View {
 
     private func deleteWorkout() {
         context.delete(day)
-        try? context.save()
+        context.saveLogged()
         dismiss()
     }
 
@@ -258,13 +270,13 @@ struct DayDetailView: View {
             // Its superset partner may now be on its own.
             Supersets.normalize(day.orderedEntries)
         }
-        try? context.save()
+        context.saveLogged()
     }
 
     /// Offsets are block offsets — a superset drags as one row.
     private func moveBlocks(from source: IndexSet, to destination: Int) {
         Supersets.moveBlocks(in: day.orderedEntries, from: source, to: destination)
-        try? context.save()
+        context.saveLogged()
     }
 }
 

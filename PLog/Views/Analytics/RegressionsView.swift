@@ -16,6 +16,7 @@ import SwiftData
 import Charts
 
 struct RegressionsView: View {
+    @Environment(\.weightUnit) private var unit
     let stats: DashboardStats
 
     /// The trend shows this many recent sessions: enough to see the climb before a dip,
@@ -59,7 +60,7 @@ struct RegressionsView: View {
                 Text(detail.exercise.name)
                     .font(.headline)
                 Spacer(minLength: 8)
-                TrendBadge(trend: .regressed, text: "\(WeightFormatter.string(rounded(comparison.change))) kg")
+                TrendBadge(trend: .regressed, text: unit.string(rounded(comparison.change)))
             }
 
             HStack(spacing: 8) {
@@ -93,11 +94,11 @@ struct RegressionsView: View {
         GridRow {
             Text(title)
                 .foregroundStyle(.secondary)
-            Text("\(WeightFormatter.string(set.weight)) kg × \(set.reps)")
+            Text("\(unit.string(set.weight)) × \(set.reps)")
                 .monospacedDigit()
             Text(date?.shortDateLabel ?? "")
                 .foregroundStyle(.secondary)
-            Text("e1RM \(WeightFormatter.string(rounded(set.estimatedOneRepMax))) kg")
+            Text("e1RM \(unit.string(rounded(set.estimatedOneRepMax)))")
                 .monospacedDigit()
                 .gridColumnAlignment(.trailing)
                 .frame(maxWidth: .infinity, alignment: .trailing)

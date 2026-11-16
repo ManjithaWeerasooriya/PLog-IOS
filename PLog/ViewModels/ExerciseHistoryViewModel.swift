@@ -31,9 +31,9 @@ final class ExerciseHistoryViewModel {
             }
         }
 
-        var unit: String {
+        func unit(_ weightUnit: WeightUnit) -> String {
             switch self {
-            case .weight, .volume, .oneRepMax: return "kg"
+            case .weight, .volume, .oneRepMax: return weightUnit.symbol
             case .reps: return "reps"
             }
         }

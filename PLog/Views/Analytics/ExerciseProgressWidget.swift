@@ -11,6 +11,7 @@ import SwiftUI
 import SwiftData
 
 struct ExerciseProgressWidget: View {
+    @Environment(\.weightUnit) private var unit
     let exercise: Exercise?
     /// The exercise's progress points, precomputed by the host (see `DashboardStats`) so
     /// this card's `body` never walks the exercise's sets.
@@ -89,7 +90,7 @@ struct ExerciseProgressWidget: View {
     }
 
     private func latestStat(_ point: ExerciseHistoryPoint, metric: ExerciseHistoryViewModel.Metric) -> some View {
-        BigStat(value: WeightFormatter.string(metric.value(of: point)), unit: "kg", style: .title2)
+        BigStat(value: WeightFormatter.string(metric.value(of: point)), unit: unit.symbol, style: .title2)
     }
 
     private func subtitle(sessions: Int) -> String {

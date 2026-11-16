@@ -47,8 +47,30 @@ enum WorkoutHistory {
         excluding current: ExerciseEntry? = nil
     ) -> SetSnapshot? {
         guard let entry = previousEntry(for: exercise, excluding: current) else { return nil }
-        guard let top = entry.sets.max(by: { $0.weight < $1.weight }) else { return nil }
-        return SetSnapshot(weight: top.weight, reps: top.reps)
+        return topSet(of: entry.sets)
+    }
+
+    /// A session's top set: the heaviest, and among equally heavy sets the one with the most
+    /// reps — which is also what makes a bodyweight exercise's top set its longest one.
+    static func topSet(of sets: [SetEntry]) -> SetSnapshot? {
+        sets
+            .max { ($0.weight, $0.reps) < ($1.weight, $1.reps) }
+            .map { SetSnapshot(weight: $0.weight, reps: $0.reps) }
+    }
+
+    /// The exercise's best estimated 1RM across every session dated before `current`'s — the
+    /// bar a personal record has to clear. 0 with no earlier history. Reads every earlier
+    /// set, so callers keep the result rather than asking again.
+    static func bestEstimatedOneRepMax(for exercise: Exercise, before current: ExerciseEntry) -> Double {
+        let cutoff = current.workoutDay?.date ?? .distantFuture
+        var best = 0.0
+        for entry in exercise.entries where entry !== current {
+            guard let date = entry.workoutDay?.date, date < cutoff else { continue }
+            for set in entry.sets {
+                best = max(best, SetSnapshot(weight: set.weight, reps: set.reps).estimatedOneRepMax)
+            }
+        }
+        return best
     }
 
     /// The previous session's working sets in performed order, for set-by-set comparison and

@@ -12,6 +12,7 @@ import SwiftUI
 import SwiftData
 
 struct RegressingExercisesWidget: View {
+    @Environment(\.weightUnit) private var unit
     let regressions: [WorkoutStats.SessionComparison]
     var size: DashboardWidgetSize = .wide
 
@@ -78,7 +79,7 @@ struct RegressingExercisesWidget: View {
             Spacer()
             TrendBadge(
                 trend: .regressed,
-                text: "\(WeightFormatter.string(roundedChange(comparison))) kg"
+                text: unit.string(roundedChange(comparison))
             )
         }
         .padding(.vertical, size == .large ? 10 : 6)

@@ -36,6 +36,7 @@ struct BestLiftsView: View {
 /// Separate from `BestLiftsView` because `isSearching` / `dismissSearch` are only readable
 /// beneath the `.searchable` modifier.
 private struct BestLiftsContent: View {
+    @Environment(\.weightUnit) private var unit
     let stats: DashboardStats
     let searchText: String
 
@@ -94,7 +95,7 @@ private struct BestLiftsContent: View {
                 }
                 if let best {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        BigStat(value: WeightFormatter.string(best.estimatedOneRepMax.roundedToTenth), unit: "kg", style: .title)
+                        BigStat(value: WeightFormatter.string(best.estimatedOneRepMax.roundedToTenth), unit: unit.symbol, style: .title)
                         Text("best est. 1RM")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -195,7 +196,7 @@ private struct BestLiftsContent: View {
                     BestBadge()
                 }
                 if let best {
-                    Text("\(WeightFormatter.string(best.estimatedOneRepMax.roundedToTenth)) kg")
+                    Text(unit.string(best.estimatedOneRepMax.roundedToTenth))
                         .font(.subheadline.monospacedDigit())
                 } else {
                     Text("Not logged")

@@ -12,6 +12,7 @@ import SwiftData
 struct ExerciseHistoryView: View {
     @State private var viewModel: ExerciseHistoryViewModel
     @State private var showingEdit = false
+    @Environment(\.weightUnit) private var weightUnit
 
     init(exercise: Exercise) {
         _viewModel = State(initialValue: ExerciseHistoryViewModel(exercise: exercise))
@@ -92,7 +93,7 @@ struct ExerciseHistoryView: View {
 
     private func sessionLabel(for point: ExerciseHistoryPoint) -> String {
         let value = viewModel.value(for: point)
-        let unit = viewModel.selectedMetric.unit
+        let unit = viewModel.selectedMetric.unit(weightUnit)
         switch viewModel.selectedMetric {
         case .reps:
             return "\(Int(value)) \(unit)"
