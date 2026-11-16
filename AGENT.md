@@ -1,12 +1,20 @@
 # PLog — Agent Reference
 
-iOS workout tracker for progressive overload. Lets the user log sets per exercise per session and see whether they improved versus the last time they did the same exercise. Workout plans (Push/Pull/Legs-style day templates) can be started/ended and stamp out pre-filled sessions. Four tabs: Train (today's workout + the session log), Progress (a customisable widget dashboard; the month calendar and Best Lifts are pushed from it), Plans, Exercises. Settings is a sheet behind the profile button on Train.
+iOS workout tracker for progressive overload. Lets the user log sets per exercise per session and see whether they improved versus the last time they did the same exercise. Workout plans (Push/Pull/Legs-style day templates) can be started/ended and stamp out pre-filled sessions. Four tabs: Train (today's workout + the session log), Progress (a customisable widget dashboard; the month calendar and Best Lifts are pushed from it), Plans, Exercises. Settings is a sheet behind the profile button on Train. A brand-new install gets a one-screen welcome sheet (pick a ready-made program and a weight unit) over the tabs, once.
+
+`docs/ux-audit.md` records the audit and research behind the November 2026 pass (weight units, the session-screen changes, rest timer, programs, body-weight log) and what was deliberately left out.
 
 ---
 
 ## Build & Run
 
-**Tests:** `PLogTests` (an XCTest bundle hosted in the app) holds `DashboardStatsTests` (and `PlanVolumeTests` for the plan's weekly sets). It checks that the cached dashboard figures match a full rebuild after edits, adds and deletes, and it times a full build and a cached rebuild over two years of generated history. Run it after touching `SessionRecord`, `DashboardStats` or `WorkoutStats`.
+**Tests:** `PLogTests` (an XCTest bundle hosted in the app) holds:
+- `DashboardStatsTests`: the cached dashboard figures match a full rebuild after edits, adds and deletes, plus timings over two years of generated history. Run it after touching `SessionRecord`, `DashboardStats` or `WorkoutStats`.
+- `PlanVolumeTests`, `ProgressDetailTests`: a plan's weekly sets; the Progress detail screens.
+- `TrainingLogicTests`: the session screen's logic — trends (unfilled and bodyweight sets), "beat it with" targets, a first weight carrying down, personal records, reps in reserve, the rest timer.
+- `AppDataTests`: the weight unit and converting stored weights, the starter library, the programs (each must reach the weekly target it's sold on), the body-weight log, backup v8.
+
+Every test builds its store with `AppStore.inMemoryContainer()`; keep the container alive for the test (the context only holds it weakly).
 
 **Do not run `xcodebuild` directly.** Use the `BuildProject` MCP tool to build, and `XcodeRefreshCodeIssuesInFile` for fast per-file diagnostics without a full build.
 
@@ -14,7 +22,9 @@ Before pushing any code change, run `XcodeRefreshCodeIssuesInFile` on every file
 
 The build currently fails on **code signing** (no development team is selected). This is a project setting the user must configure in Xcode → Target → Signing & Capabilities. It is not a code error. Every Swift file compiles cleanly — confirm this with `XcodeRefreshCodeIssuesInFile` when making changes.
 
-The deployment target is set to **iOS 17.0** (updated in `project.pbxproj`). All APIs used are iOS 17+: SwiftData, Swift Charts, `@Observable`, `ContentUnavailableView`.
+The app target's deployment target is **iOS 17.6** (`project.pbxproj`). All APIs used are iOS 17+: SwiftData, Swift Charts, `@Observable`, `ContentUnavailableView`.
+
+**From a git worktree, or with Xcode closed, the MCP tools have no workspace to act on.** Use the fallback under Known Issues: `xcodebuild … -destination "platform=iOS Simulator,id=<UDID>" -derivedDataPath <tmp> build` (and `test`). Pass `-parallel-testing-enabled NO` to `test`: without it Xcode runs the tests on a clone and shuts the simulator you were looking at.
 
 ---
 
@@ -43,6 +53,7 @@ PLog/                        ← repo root
     │   ├── PlanStatus.swift         ← notStarted / active / ended (nonisolated enum)
     │   ├── UserProfile.swift        ← the user's own details; singleton (ensureExists(in:))
     │   ├── Dashboard.swift          ← Progress layout: Dashboard singleton, DashboardWidget, kinds, sizes, DashboardLayout packing
+    │   ├── BodyWeightEntry.swift    ← one body-weight reading on one day
     │   └── Gender.swift              ← plain enum incl. .preferNotToSay, not Optional<Gender>
     ├── ViewModels/
     │   ├── ExerciseEntryViewModel.swift   ← per-exercise set list: prefill, duplicate-set, per-set trend
@@ -80,7 +91,10 @@ PLog/                        ← repo root
     │   │   ├── SessionDetailsSheet.swift ← name/date/notes editor (Cancel/Done sheet)
     │   │   ├── ExerciseEntryRows.swift   ← one exercise's rows: header, its SetRows, "Add Set", last-time hint
     │   │   ├── SupersetEntryRows.swift   ← a superset merged into one block: chain header, sets interleaved by round
-    │   │   └── SetRow.swift              ← one set: summary row; steppers appear in place when expanded
+    │   │   ├── SetRow.swift              ← one set: summary row; steppers, RIR picker and "last time" hint as child rows when expanded
+    │   │   └── RestTimerBar.swift        ← the rest timer capsule floating above the tab bar on today's session
+    │   ├── Onboarding/
+    │   │   └── WelcomeView.swift         ← first-launch sheet: pick a program and a weight unit, or skip
     │   ├── Entry/
     │   │   └── ExercisePickerView.swift  ← searchable sheet to pick from library
     │   ├── History/
@@ -94,13 +108,15 @@ PLog/                        ← repo root
     │   │   ├── PlanDayDetailView.swift  ← day template: name, times-a-week stepper, exercise slots
     │   │   ├── PlanExerciseRow.swift    ← slot row with sets/reps steppers
     │   │   ├── PlanSupersetRow.swift    ← a superset merged into one row: shared Rounds stepper + reps per exercise
+    │   │   ├── PlanTemplateViews.swift  ← a program as a row; the "Programs" sheet (Plans "+", Train's no-plan card)
     │   │   └── PlanLogView.swift        ← date-by-date log with Rest Day gaps, "Up Next"
     │   ├── Exercises/
     │   │   ├── ExerciseLibraryView.swift ← Exercises tab: searchable list by category; owns its stack
     │   │   ├── MuscleGroupSelectionView.swift ← Primary or Secondary checklist, pushed from the form
     │   │   └── AddExerciseView.swift     ← create OR edit (exercise: Exercise? param)
     │   └── Settings/
-    │       ├── SettingsView.swift        ← Settings sheet: theme, body weight, Data section
+    │       ├── SettingsView.swift        ← Settings sheet: weight unit, RIR and rest-alert toggles, body weight, theme, library, Data
+    │       ├── BodyWeightView.swift      ← the body-weight log: log today, trend chart, readings (pushed from Settings and Progress)
     │       └── DataTransferSection.swift ← Export/Import buttons, file pickers, confirm alerts
     └── Utilities/
         ├── ProgressiveOverload.swift ← SetSnapshot, ProgressTrend, overload logic
@@ -112,7 +128,14 @@ PLog/                        ← repo root
         ├── DashboardStats.swift      ← every Progress widget figure, built once outside `body` (see below)
         ├── SessionRecord.swift       ← plain-value copy of a session + SessionRecordCache (incremental re-read)
         ├── Supersets.swift           ← superset blocks, join/insert/remove/ungroup/move/normalize (entries + plan slots)
-        ├── StarterData.swift         ← first-launch seed: exercise library + 2 sample plans
+        ├── StarterData.swift         ← first-launch seed: the 59-exercise library; find-or-create by name for programs
+        ├── PlanTemplate.swift        ← the ready-made programs (Full Body, Upper / Lower, Push / Pull / Legs) + install
+        ├── AppStore.swift            ← the one model list; opens the store without trapping; `saveLogged()`; `Log`
+        ├── WeightUnit.swift          ← kg/lb: label, steps, region default, conversion, `\.weightUnit` environment value
+        ├── BodyWeightLog.swift       ← record/delete a reading (one a day), change over a month
+        ├── RestTimer.swift           ← the app's one rest countdown (end-date based) + optional background alert
+        ├── EffortTracking.swift      ← reps in reserve: the Settings key and `SetEntry.repsInReserve` (stored as rpe)
+        ├── Onboarding.swift          ← the welcome-pending flag
         ├── DataBackup.swift          ← JSON backup format (PLogBackup) + export/decode/restore
         ├── AppTheme.swift            ← system/light/dark @AppStorage preference
         ├── Formatters.swift          ← WeightFormatter, Date extensions
@@ -151,19 +174,44 @@ Setting only the to-one side (`slot.planDay = day`, or passing it to the `init`)
 
 `ExerciseEntry` has an `order: Int` field for stable positioning within a day. `WorkoutDay.orderedEntries` and `ExerciseEntry.orderedSets` sort on this / on `setNumber`. Always use these computed properties in the UI instead of `.entries` or `.sets` directly.
 
-### All ten models must be listed in the Schema
+### Every model is listed once, in `AppStore.models`
 
-`PLogApp` and `SampleData` both construct `ModelContainer` with an explicit `Schema([WorkoutDay.self, Exercise.self, ExerciseEntry.self, SetEntry.self, WorkoutPlan.self, PlanDay.self, PlanExercise.self, UserProfile.self, Dashboard.self, DashboardWidget.self])`. Add any new `@Model` class here too.
+`AppStore` (`Utilities/AppStore.swift`) holds the one list of `@Model` classes — the ten original ones plus `BodyWeightEntry`. `PLogApp` opens the on-disk store through `AppStore.open()`, and `SampleData` and every test use `AppStore.inMemoryContainer()`, so a new `@Model` is added in exactly one place. (The list used to be written out separately in the app, the preview fixture and each test file.) Adding a model, or an attribute with a default, is a lightweight migration SwiftData does on its own; checked by installing this build over a store written by the previous one (416 sessions) in the simulator.
+
+### Opening the store never traps; saves are logged
+
+`AppStore.open()` returns `.ready(container)` or `.failed(message)`. On failure `PLogApp` shows `StoreUnavailableView` ("Can't Open Your Data", nothing has been deleted) instead of calling `fatalError`, which crashed on every launch with no explanation. The launch-time guarantees (`StarterData.seedIfNeeded`, `UserProfile.ensureExists`, `Dashboard.ensureExists`, the unit default, the welcome flag) all run inside it.
+
+Use `context.saveLogged()` rather than `try? context.save()`. The app autosaves constantly and has nowhere to show a failed save; `saveLogged` writes the failure to `Log.data` (`OSLog`), where `try?` threw it away. Use a real `try` only where the caller can act on the failure (backup restore, unit conversion).
+
+**Don't use `context.rollback()` to undo a failed bulk change.** It traps inside SwiftData ("Unexpected backing data for snapshot creation") when the context holds cascade-deleted rows that were never faulted in, which a replace-all import always does. The pattern instead: read everything that can fail first, then make the change in a step that can't throw (see `DataBackup.restore`), or keep the original values and put them back by hand (see `WeightUnit.convertStoredWeights`).
 
 ### Light/Dark mode is an `@AppStorage` preference, not `UserProfile`
 
-`AppTheme` (`Utilities/AppTheme.swift`: `.system`/`.light`/`.dark`) is read via `@AppStorage("appTheme")` in **both** `PLogApp` (applies `.preferredColorScheme(appTheme.colorScheme)` to the root view — `nil` for `.system` means "follow the device") and `SettingsView`'s `Picker`. Two independent `@AppStorage` properties with the same key stay in sync automatically because they share the same `UserDefaults` storage; there's no manual plumbing between them. This is deliberately **not** a `UserProfile` field — it's a UI preference, not user data, and `@AppStorage` (unlike a SwiftData `@Query`) is available synchronously the instant the App struct's `body` is evaluated, before the container/first query has resolved. Follow the same `@AppStorage` (not `UserProfile`) approach for any future pure-UI preference — the still-open weight-unit (kg/lbs) preference belongs here too.
+`AppTheme` (`Utilities/AppTheme.swift`: `.system`/`.light`/`.dark`) is read via `@AppStorage("appTheme")` in **both** `PLogApp` (applies `.preferredColorScheme(appTheme.colorScheme)` to the root view — `nil` for `.system` means "follow the device") and `SettingsView`'s `Picker`. Two independent `@AppStorage` properties with the same key stay in sync automatically because they share the same `UserDefaults` storage; there's no manual plumbing between them. This is deliberately **not** a `UserProfile` field — it's a UI preference, not user data, and `@AppStorage` (unlike a SwiftData `@Query`) is available synchronously the instant the App struct's `body` is evaluated, before the container/first query has resolved. Follow the same `@AppStorage` (not `UserProfile`) approach for any future pure-UI preference. The weight unit, the reps-in-reserve toggle, the rest timer's length and alert, and the welcome-pending flag all work this way.
+
+### The weight unit is a label, not a storage format
+
+`WeightUnit` (`.kg` / `.lb`, `Utilities/WeightUnit.swift`) is the unit weights are entered and shown in. **A stored weight is simply the number the user typed, in their unit** — nothing is converted on read or write, so there's no rounding drift and a 135 lb plate stack stays 135. `UserProfile.weightKg`, `DashboardStats.bodyWeightKg` and the backup's `weightKg` keep their names but hold that same unit-less number.
+
+- **Reading it.** Views read `@Environment(\.weightUnit)`, injected once at the app root from `@AppStorage(WeightUnit.storageKey)` so every screen and sheet redraws on a change. Code outside a view takes a `unit:` parameter, defaulting to `WeightUnit.current` (a direct `UserDefaults` read). Format a weight with `unit.string(_:)` ("62.5 kg"); don't write "kg" in a string.
+- **What it drives.** The label, the weight stepper's step (`loadStep`: 2.5 kg / 5 lb) and ceiling, the empty-bar seed for a first set (20 kg / 45 lb), a drop set's rounding, and the body-weight stepper.
+- **Default.** On a brand-new install it follows the device's region (`Locale.measurementSystem == .us` → lb). A store that already has data and no saved choice gets kg, the only unit there was before (`chooseDefaultIfUnset`). The welcome sheet and Settings both have the picker.
+- **Changing it with weights already logged asks first** (Settings): "Convert to lb" rewrites every set, the profile weight and the body-weight log (`convertStoredWeights`, rounded to the one decimal the app shows), "Keep the Numbers" only changes the label — for someone who had been entering pounds under a kg label all along. Only the user knows which they want.
+- **Backups carry it** (v8 `weightUnit`), and a restore sets the preference to match, so imported numbers are never shown under the wrong unit.
+- `WeightUnit` is `nonisolated` (it's read from default arguments); `string(_:)` is `@MainActor` because `WeightFormatter` is.
 
 ### Gender is a plain two-case enum
 
 `Gender` has exactly two cases, `.female` and `.male` — no "prefer not to say"/non-binary option; that was tried and deliberately walked back. `UserProfile`'s default is `.female`. If a third option is ever wanted, add the case back to `Gender.swift` and give `UserProfile.init` a real default again; don't special-case a `nil`/optional `Gender` for it.
 
-**`name`, `gender`, `age` and `heightCm` are persisted but not surfaced.** Settings only edits `weightKg` — the one field a feature reads (Analytics' body-weight card). The other fields stay on the model and in `DataBackup` so existing backups round-trip unchanged; they were removed from the Settings form because asking for data nothing displays is clutter. Put them back in the UI only alongside a feature that consumes them.
+**`name`, `gender`, `age` and `heightCm` are persisted but not surfaced.** The only profile field a feature reads is `weightKg`, and that is now written by the body-weight log rather than edited directly. The other fields stay on the model and in `DataBackup` so existing backups round-trip unchanged; they were removed from the Settings form because asking for data nothing displays is clutter. Put them back in the UI only alongside a feature that consumes them.
+
+### Body weight is a log; the profile holds the latest reading
+
+`BodyWeightEntry` (date, weight) is one reading on one day. `BodyWeightLog.record` replaces that day's reading if there is one and then sets `UserProfile.weightKg` to the newest reading by date, so everything that already read the profile (the dashboard, backups) keeps working and a back-dated reading can't become the current weight. Deleting the newest falls back to the one before; deleting the last reading leaves the profile as it was. `BodyWeightView` (pushed from Settings ▸ Body Weight and from the Body Weight card via `ProgressRoute.bodyWeight`; plain stack content) logs today's weight, draws the trend once there are two readings, and lists readings with swipe-to-delete (unconfirmed, like a set). The card's subtitle is `BodyWeightLog.change`: latest against the reading at or before 30 days ago, else the first.
+
+Weight going up or down is stated without green or red: whether it's good depends on a bulk or a cut, which the app doesn't know. Opening Settings used to write a made-up 70 kg into the profile so its stepper had something to show; nothing is written now until the user logs a weight.
 
 ### MuscleGroup categories
 
@@ -177,7 +225,7 @@ Setting only the to-one side (`slot.planDay = day`, or passing it to the `init`)
 
 ### UserProfile is a guaranteed singleton
 
-`UserProfile.ensureExists(in:)` is called unconditionally at launch (`PLogApp`) and in `SampleData` — exactly one row always exists by the time `SettingsView` appears. `SettingsView` reads `profiles.first` and treats it as non-optional in practice (the `nil` branch is only reachable for the one frame before `ensureExists` commits). Don't add a second code path that creates a `UserProfile`.
+`UserProfile.ensureExists(in:)` is called unconditionally at launch (`AppStore.open`) and in `SampleData` — exactly one row always exists by the time `SettingsView` appears. `SettingsView` reads `profiles.first` and treats it as non-optional in practice (the `nil` branch is only reachable for the one frame before `ensureExists` commits). Don't add a second code path that creates a `UserProfile`.
 
 ### A set has no "completed" flag
 
@@ -249,7 +297,7 @@ Plans and Exercises used to share one "Library" tab behind a segmented Plans | E
 
 ### Plans → sessions (the Train tab)
 
-`WorkoutLogger.logWorkout(for:on:in:)` stamps a `PlanDay` template into a `WorkoutDay`: one `ExerciseEntry` per slot with `targetSets` sets at `targetReps`, weight prefilled from `WorkoutHistory.previousTopSet` — so logging a plan day means only adjusting weights. It's called from two places that must stay in sync: the **Train tab**'s hero card (`TrainHeroCard`: one prominent "Start <`WorkoutLogger.suggestedNextDay`>" button, the other days and "Blank Workout" behind a "Different day" menu; with no loggable plan it offers a blank workout and points at the Plans tab — there is no `+` in the toolbar, the card *is* the daily action) and the plan's own log screen via `WorkoutPlanViewModel`. `DayDetailView` shows a "Plan Day" row for stamped sessions.
+`WorkoutLogger.logWorkout(for:on:in:)` stamps a `PlanDay` template into a `WorkoutDay`: one `ExerciseEntry` per slot with `targetSets` sets at `targetReps`, weight prefilled from `WorkoutHistory.previousTopSet` — so logging a plan day means only adjusting weights. It's called from two places that must stay in sync: the **Train tab**'s hero card (`TrainHeroCard`: one prominent "Start <`WorkoutLogger.suggestedNextDay`>" button, the other days and "Blank Workout" behind a "Different day" menu; with no loggable plan it offers "Choose a Program" first, which opens `PlanTemplateGallery(startsPlan: true)`, and "Log a Blank Workout" second — there is no `+` in the toolbar, the card *is* the daily action. Once today's session exists the card is that session: its name, "Today · 7 exercises · 24 sets" and "Continue Workout", with the one-workout-a-day rule as a footnote. That rule used to be the card's whole message. The card has a title and one line of context; it had uppercase eyebrow labels above the title, which were removed.) and the plan's own log screen via `WorkoutPlanViewModel`. `DayDetailView` shows a "Plan Day" row for stamped sessions.
 
 `PlanLogView` lists only the sessions stamped from the plan's days (`allDays.filter { $0.planDay?.plan === plan }`), newest first by month, plus the "Up Next" row. It used to pad the list with a row for every rest day in the plan's window (`PlanTimeline`, since deleted) — a 12-week plan rendered ~60 "Rest Day" rows around a handful of sessions. The calendar (Progress → Activity) is where rest days are counted.
 
@@ -305,9 +353,18 @@ Every Progress card is a widget: a `DashboardWidget` row (kind, order, `rangeWee
 
 `WorkoutPlanViewModel.duplicate(_:in:)` (static) deep-copies a plan's days and exercise slots into a new plan that is always inactive (`startedAt`/`endedAt` left `nil`) — the original plan's status is untouched. The copy's name is `"<base> (n)"`: `baseName(from:)` strips a trailing `" (N)"` suffix before appending the next free number, so duplicating "PPL (1)" produces "PPL (2)", not "PPL (1) (1)". Reached via a leading `.swipeActions` button in `PlanListView`.
 
-### First-launch starter data
+### First launch: the library is seeded, the plan is chosen
 
-`PLogApp` calls `StarterData.seedIfNeeded(in:)` right after building the container. It seeds only when there are **zero** `Exercise` rows: a 20-exercise library across all muscle groups, an active "Push / Pull / Legs" plan (3 days, 5 slots each) and a not-started "Upper / Lower" plan. It never touches a store that already has data. This is distinct from `SampleData`, which is the in-memory preview fixture and also seeds workout history.
+`AppStore.open()` calls `StarterData.seedIfNeeded(in:)`, which seeds only when there are **zero** `Exercise` rows: `StarterData.library`, 59 common exercises, each under its most specific muscle group with secondaries listed only where the muscle does real work (they count as half a set). It returns whether it seeded. It never touches a store that already has data. This is distinct from `SampleData`, the in-memory preview fixture, which also seeds workout history and a few weeks of body weight.
+
+**Plans are no longer seeded.** The app used to seed an active Push / Pull / Legs at once a week per day, which put 11 of 13 muscle groups "below" on the plan's own Weekly Sets card — a new user's first look at the volume feature was a wall of orange — and gave every user the same split whatever their week looked like. Now:
+
+- `PlanTemplate` (`Utilities/PlanTemplate.swift`) holds three programs: **Full Body** (3 days), **Upper / Lower** (4) and **Push / Pull / Legs** (6: three days, each `timesPerWeek` 2). Each is written so chest, back, shoulders, biceps, triceps, quads, hamstrings and glutes reach `HypertrophyTarget.minimumWeeklySets` with nothing above the high line, and `AppDataTests.testEveryProgramReachesTheWeeklyTargetForTheMainMuscleGroups` holds them to it. Small groups (forearms, traps, calves in the shorter programs) can still read "below"; that is true and is left showing.
+- `template.install(in:start:)` creates an ordinary, editable `WorkoutPlan`. Exercises are found by name, ignoring case (`StarterData.exercise(named:in:cache:)`), and created from the library if missing, so a program can be added to a store whose library has been edited. A second copy is named "Full Body (1)" (`WorkoutPlanViewModel.uniqueName`). Starting goes through `WorkoutPlanViewModel.start()` like every other start.
+- **The welcome sheet** (`WelcomeView`, presented from `ContentView` while `@AppStorage(Onboarding.welcomePendingKey)` is true) lists the programs with Full Body preselected, has the weight-unit picker, a "Start <program>" button and Skip. Dismissing it any way clears the flag. The flag is set only on a brand-new install: `seedIfNeeded` seeded *and* the store has no sessions or plans (someone who deleted their whole library is reseeded but not welcomed). One screen, two decisions, both with a default: the point is to reach the first session, and the research in `docs/ux-audit.md` is clear that longer onboarding loses people. Don't grow it into a questionnaire.
+- **Plans "+"** is a menu: "From a Program…" (the same rows in `PlanTemplateGallery`; added but not started, then pushed) or "Blank Plan" (the existing `NameEntrySheet`). The Plans empty state offers both.
+- **Settings ▸ Add Starter Exercises** (`StarterData.addMissingExercises`) brings the larger library to a store seeded with the old 20, matching by name and leaving existing exercises untouched.
+- `DebugHistory.generate` installs Push / Pull / Legs when the store has no plan, and adds half a year of weekly body-weight readings.
 
 ### Save model: pushed screens autosave, sheets are Cancel/Done
 
@@ -324,9 +381,9 @@ Two lanes, matching how Apple's own apps behave — pick one per screen, never m
 
 ### Data export / import is a JSON snapshot, not the SwiftData store
 
-`DataBackup` (`Utilities/DataBackup.swift`) serialises the whole object graph to one `PLogBackup` JSON document (ISO-8601 dates, pretty-printed) and restores it. Cross-references (`PlanExercise.exercise`, `ExerciseEntry.exercise`, `WorkoutDay.planDay`) are written as **export-time UUIDs** — `PersistentIdentifier` is not stable across stores, so it never appears in the file. `PLogBackup.currentVersion` (6) is stamped into every file; `decode` refuses a newer version with a clear message. Version 4 added the optional `dashboard` widget list (kind raw value, order, range, exercise UUID); a file without it (v1–3) restores the default layout, and a widget kind the build doesn't know is skipped. Version 5 added an optional `size` per widget; a v4 file (or an unknown size) gives each widget its kind's default size. Version 6 added optional `additionalPrimary` / `secondary` muscle-group lists per exercise; a v1–5 file restores each exercise with only its `category`. Version 7 added an optional `timesPerWeek` per plan day; absent, the day runs once a week. Restore stores the packed order. **Bump the version and add a migration branch in `decode` when a record's shape changes** — don't silently add required fields.
+`DataBackup` (`Utilities/DataBackup.swift`) serialises the whole object graph to one `PLogBackup` JSON document (ISO-8601 dates, pretty-printed) and restores it. Cross-references (`PlanExercise.exercise`, `ExerciseEntry.exercise`, `WorkoutDay.planDay`) are written as **export-time UUIDs** — `PersistentIdentifier` is not stable across stores, so it never appears in the file. `PLogBackup.currentVersion` (8) is stamped into every file; `decode` refuses a newer version with a clear message. Version 4 added the optional `dashboard` widget list (kind raw value, order, range, exercise UUID); a file without it (v1–3) restores the default layout, and a widget kind the build doesn't know is skipped. Version 5 added an optional `size` per widget; a v4 file (or an unknown size) gives each widget its kind's default size. Version 6 added optional `additionalPrimary` / `secondary` muscle-group lists per exercise; a v1–5 file restores each exercise with only its `category`. Version 7 added an optional `timesPerWeek` per plan day; absent, the day runs once a week. Version 8 added an optional `weightUnit` (the unit every weight in the file is in; a restore sets the preference to match, and a file without it leaves the setting alone) and an optional `bodyWeights` list; reps in reserve needed no new key because it lives in the set's long-standing `rpe`. Restore stores the packed order. **Bump the version and add a migration branch in `decode` when a record's shape changes** — don't silently add required fields.
 
-**Import is replace-all, never merge.** `restore` deletes sessions → plans → exercises (in that order so cascade/nullify rules never leave dangling links), then re-inserts everything appending from the to-many side per the relationship rule above. The `UserProfile` row is updated in place so the singleton guarantee holds. `DataTransferSection` (Settings → Data) parses the picked file first and shows counts in a "Replace All Data?" `.alert` before anything is touched. Enum raw values that no longer decode (`MuscleGroup`, `Gender`) fall back to `.other`/`.female` rather than failing the import.
+**Import is replace-all, never merge, and never half-done.** `restore` first reads every row it's about to replace (`CurrentContents`, the only part that can throw), then `replaceContents` — deliberately not `throws` — deletes sessions → plans → exercises → body-weight readings (in that order so cascade/nullify rules never leave dangling links) and re-inserts everything, appending from the to-many side per the relationship rule above, and one `save()` ends it. So the context is either untouched or fully replaced when it's saved. The earlier version fetched and deleted in turns: a fetch failing midway left a partial replace in the context, which autosave would then have written. Imported numbers are clamped (no negative weights or reps, `rpe` within 0–10, non-positive body weights dropped) so a hand-edited file can't put impossible values in the log. The `UserProfile` row is updated in place so the singleton guarantee holds. `DataTransferSection` (Settings → Data) parses the picked file first and shows counts in a "Replace All Data?" `.alert` before anything is touched. Enum raw values that no longer decode (`MuscleGroup`, `Gender`) fall back to `.other`/`.female` rather than failing the import.
 
 The file picker URL is security-scoped — reads must be wrapped in `startAccessingSecurityScopedResource()`. `BackupDocument` (the `FileDocument` for `.fileExporter`) is declared `nonisolated` because the project's default `MainActor` isolation otherwise conflicts with the protocol's nonisolated requirements; do the same for any future `FileDocument`/`Transferable` type.
 
@@ -353,6 +410,16 @@ SetSnapshot(weight: 60, reps: 8).estimatedOneRepMax  ≈ 76
 ```
 
 A tolerance of `0.01` is applied to avoid floating-point noise registering as a change.
+
+**Two cases estimated 1RM can't judge, because it's zero whenever the weight is** (both in `ProgressiveOverload.trend`):
+- **Bodyweight sets** (0 on both sides: pull-ups, planks, leg raises) are compared on reps. They used to have no trend at all, whatever the reps. Adding load to an exercise that was bodyweight last time is an improvement.
+- **A set that hasn't been filled in** — no reps, or still 0 where last time had a load — has no trend. A plan day is stamped before it's lifted, and those sets used to show a red arrow; the same sessions also turned up under Regressing. A wrong red is the thing this section exists to prevent.
+
+`WorkoutHistory.topSet(of:)` is the one definition of a session's top set: the heaviest, and among equally heavy sets the one with the most reps (which makes a bodyweight exercise's top set its longest one). `SessionRecord` and `previousTopSet` both use it.
+
+**"Beat it with".** `ProgressiveOverload.targets(toBeat:step:)` gives the smallest steps that beat a set: one more rep at the same weight, and the next weight up (`unit.loadStep`) at the fewest reps that still comes out ahead on estimated 1RM — 60 × 8 is beaten by 60 × 9 or 62.5 × 7. An open set shows it under the steppers ("Last time 60 kg × 8 / Beat it with 60 × 9 or 62.5 × 7"), so progress is a number to aim at rather than a colour afterwards. A bodyweight set only has the rep target. `TrainingLogicTests` checks every target does beat the set and that one rep fewer at the heavier weight doesn't.
+
+**Personal records.** `ExerciseEntryViewModel.recordSet` is the entry's best set by estimated 1RM, if it beats `WorkoutHistory.bestEstimatedOneRepMax(for:before:)` — every session dated *before* this one, so editing an old session judges it against what came earlier. It gets a `RecordBadge` ("PR") and a success haptic. One mark per exercise, not one per set, and none the first time an exercise is logged. The lookup reads every earlier set of the exercise (about 50 ms the first time with two years of history in the simulator, 4 ms after), so it's a lazy property like `previous`: only an expanded exercise asks for it.
 
 **Which previous set a set is compared to — set *n* vs. set *n*.** `ExerciseEntryViewModel.trend(for:)` grades a set against the **same-numbered** set from the previous session (`WorkoutHistory.previousSets(for:excluding:)`, in performed order), falling back to the previous session's top set only for a set number the previous session didn't have. It used to compare every set to the top set, which painted a deliberate back-off third set red and taught users to ignore red — the whole signal loses credibility if it's wrong about normal training. Session-level questions still use the top set: `ExerciseHistoryView`'s overall trend and `WorkoutStats.bestLifts` compare sessions' best sets, and the "Last time" hint shows `previousTopSet`.
 
@@ -401,7 +468,7 @@ Every tinted pill — `TrendBadge`, `CategoryChip`, `PlanStatusPill` — puts th
 
 **Dynamic Type.** No fixed point sizes or widths on anything that holds text: `BigStat` takes a `Font.TextStyle`, not a number; segmented pickers size to their labels (the Analytics range picker and the old Library picker had hard-coded widths that clipped); dimensions that should grow with text use `@ScaledMetric` (calendar day circles, rings, legend dots, stepper buttons). Layouts that put two things side by side use `ViewThatFits(in: .horizontal) { HStack {…}; VStack {…} }` (Analytics card headers, the two hero steppers in `SetRow`/`PlanExerciseRow`, the muscle-split donut + legend), or switch on `dynamicTypeSize.isAccessibilitySize` when the two arrangements aren't the same children (`WorkoutDayRow`, the `ExerciseEntryRows`/`SetRow`/`PlanExerciseRow` headers). Two deliberate exceptions: the activity dot grid and the muscle-split donut are charts, not text, and keep fixed sizes so three months of weeks still fit across the card; and every Swift `Chart` is capped at `.dynamicTypeSize(...DynamicTypeSize.xxxLarge)` because axis labels collide above that — the same approach Health takes. Verify at `accessibility-extra-extra-extra-large` (`xcrun simctl ui <udid> content_size …`); anything that wraps word-per-word or pushes the page wider than the screen (a vertical `ScrollView` silently centres over-wide content, which shows up as the *nav title* being cut off) needs one of the treatments above.
 
-VoiceOver labelling beyond `TrendBadge`/`CategoryChip`/`PlanStatusPill`/`NumberStepper` is still to do.
+VoiceOver: `TrendBadge`/`CategoryChip`/`PlanStatusPill`/`NumberStepper`/`BestBadge` are labelled; a set row's summary, the rest timer, the program rows and the body-weight chart read as single elements with a value. The dashboard's charts still have no spoken summary. Reduce Motion is honoured by `NumberStepper`, `SetRow` and `RestTimerBar`; other `withAnimation(.snappy)` calls are short state changes the system already tones down.
 
 ### WeightFormatter
 
@@ -420,7 +487,7 @@ Behavior worth knowing before touching it:
 - `ExerciseEntryRows`' header is a `Button` with `.tint(.primary)`: on iOS 26 the default button style tints its label with the accent, and hierarchical `.primary`/`.secondary` inside then resolve against *that* — so without the tint override the whole row went blue. (`SetRow`/`PlanExerciseRow` are `DisclosureGroup`s and don't need it.)
 - **Two hero steppers share a phone-width row**, and four 44-pt buttons already take most of it. The number is `.title2` (not `.title`) with a 36-pt minimum and each stepper sizes to its content, which is what lets a 5-glyph weight ("120.5") sit beside a 1-digit rep count. Don't decide that layout with `ViewThatFits` — it judges by *ideal* width and ignores the number's `minimumScaleFactor`, so wide values silently fell into the stacked fallback; the rows stack only on `dynamicTypeSize.isAccessibilitySize`.
 
-For an `Int?`/`Double?` model field (`UserProfile.age`/`heightCm`/`weightKg`), bind through a computed `Binding` with a fallback default (e.g. `profile.age ?? 25`) and seed the real default into the model `onAppear` — see `SettingsView` — so the stepper's initial display never silently disagrees with the (still-`nil`) persisted value.
+For a value that may not exist yet (an `Int?`/`Double?` model field, or today's body weight before it's logged), bind the stepper to a local draft with a fallback for display and write to the model only when the user acts — see `BodyWeightView.draft`. Settings used to seed a default into the model `onAppear` so the stepper and the stored value agreed, which meant that just opening Settings recorded a body weight of 70 kg nobody had entered.
 
 ### Sets, logged exercises, and plan-day slots are all collapsible, accordion-style — same pattern, same look
 
@@ -429,6 +496,16 @@ Sets are edited **inline on the session screen** — there is no separate set-ed
 **`SetRow` and `PlanExerciseRow` are `DisclosureGroup`s.** The label is the one-line summary; the content (the two `NumberStepper`s) becomes the group's child row, so the expand/collapse motion, chevron and row insertion are the platform's own — the same as subtasks in Reminders. This replaced a hand-rolled header `Button` + `if isExpanded { … }`: a List row's height closes faster than SwiftUI's removal transition runs, so the steppers' labels lingered over the next row on collapse (a `.move` transition slid them over the header instead, and an instant `.identity` removal made the whole thing a snap). Don't go back to a custom accordion for these rows; if you need something the group can't express, that's the signal to reconsider the design, not to re-animate it. The child row carries `.deleteDisabled(true)` (and `.moveDisabled(true)` in the plan-slot case) so a swipe or drag on the steppers never acts on the set/slot. Exercise delete and History live on the header row's `.swipeActions`/`.contextMenu`; History is presented as a **sheet** (`historyExercise`) because `DayDetailView` is reachable from three different stacks and owns no `path` to push onto. Adding an exercise (`+` → `ExercisePickerView`) inserts the entry, prefills set 1, expands both the entry and that set, and scrolls the header into view (`ScrollViewReader` + `.id(entry.persistentModelID)`) — one modal, no second sheet.
 
 `SetRow` (inside `ExerciseEntryRows`), `ExerciseEntryRows` (inside `DayDetailView`), and `PlanExerciseRow` (inside `PlanDayDetailView`) all take `isExpanded: Binding<Bool>` rather than owning their own `@State` (for the two `DisclosureGroup`s it's passed straight through as `isExpanded:`). Each parent holds a single `expanded…ID: PersistentIdentifier?` and hands every row a computed `Binding` that compares against it, so **only one row is ever expanded at a time** in any list. `DayDetailView` holds two such IDs — `expandedEntryID` (which exercise) and `expandedSetID` (which set, across the whole day) — and collapsing an exercise clears the set too. Everything starts collapsed except a just-added exercise's first set.
+
+**An open set is several child rows, not one.** `SetRow`'s `DisclosureGroup` content is the steppers, then (when reps in reserve is on) the RIR picker, then the "last time / beat it with" hint — each its own row with the separators between them hidden. They were one stacked row at first: when the hint wrapped to a second line the List still sized the row for one, and the squeeze came out of the weight stepper, whose number shrank (it has a `minimumScaleFactor`). Keep multi-line text in a row of its own. `SetRow` takes an `ExerciseEntryViewModel.SetContext` (trend, the same set last time, whether it's a record) from `viewModel.context(for:)`, and its summary is one VoiceOver element ("Set 1, 60 kilograms, 8 reps, improved, personal record").
+
+**A first weight carries down the exercise.** A plan day logged for the first time opens with every set at 0. `SetRow` reports each weight edit (`onWeightChange`), and `ExerciseEntryViewModel.weightChanged` makes the later working sets *still at 0* follow the edited set for as long as that edit goes on (a held stepper or a typed value; `followWindow` is 3 s between changes). A set that already has a weight is never touched — last session's prefill, and anything entered by hand, stay — drops don't follow, and coming back to correct the set later moves only that set. This is the one place a set's value is written by something other than its own stepper; don't widen it to sets that have a weight.
+
+**Reps in reserve is optional and off by default.** Settings ▸ Reps in Reserve (`@AppStorage(EffortTracking.storageKey)`) adds a segmented picker (–, 0, 1, 2, 3, 4+) to each open set and " · 2 RIR" to its summary. It's stored in `SetEntry.rpe` as 10 − RIR through `SetEntry.repsInReserve`, a field that has always been on the model and in backups. It's a toggle because most lifters don't log it and a third control on every set is clutter for them; nothing reads it for analysis yet.
+
+**The exercise's notes show while it's being logged**: `Exercise.notes` (form cues, machine settings) appears as a footnote row under the header of an expanded exercise. It was saved on the exercise and shown nowhere on the session screen.
+
+**The rest timer is started by hand.** `RestTimerBar` is a capsule in a bottom `safeAreaInset` on `DayDetailView`, shown for today's session (and for any session while a countdown is running). Idle: tap to start, touch and hold for the length menu (a `Menu` with `primaryAction`). Running: time left, +30 s, stop. `RestTimer.shared` is the app's one timer — it counts against an end date, so it survives the app being backgrounded, and it keeps running if the user leaves the screen; `ContentView` plays the "rest over" haptic from its `finishedCount` on whichever tab is showing. Settings ▸ Rest Timer Alert (off by default; turning it on is where notification permission is asked for) also schedules a local notification, which iOS only shows when the app isn't in front. There is no automatic start because a set has no "done" tick to start it from (see "A set has no completed flag"); don't add one for the timer's sake. The capsule's text stops growing at `accessibility1`: it floats over the list like the tab bar, and at the largest sizes it covered the sets beneath it.
 
 Visually, all of these are **plain rows inside one shared `Section`** — no per-row card background or hidden separators. The exercise header in `ExerciseEntryRows` is a `Button` (not `onTapGesture`) so it highlights on touch-down and carries the button trait for VoiceOver; see the `.tint(.primary)` note under NumberStepper. Keep any new expandable list in this style rather than reinventing a bespoke card look.
 
@@ -444,7 +521,9 @@ Visually, all of these are **plain rows inside one shared `Section`** — no per
 ## Known Issues / To-Do
 
 - **Signing:** development team not configured — set in Xcode → Target → Signing & Capabilities before building to a device or submitting to TestFlight.
-- **Deployment target:** currently `26.5` in the project-level build settings; the target-level override sets `17.0`. Unify to `17.0` in project-level settings when convenient.
-- **Weight unit preference:** the app hardcodes `kg`; `UserProfile` also stores height in cm and weight in kg with no unit toggle. A kg/lbs (and cm/in) preference would need a `UserDefaults`-backed `@AppStorage` and threading it through `WeightFormatter`, `NumberStepper` ranges, and all display sites.
+- **Deployment target:** currently `26.5` in the project-level build settings; the target-level override sets `17.6`. Unify in project-level settings when convenient. The app has only been run on iOS 26.5 simulators.
+- **Not built yet, on purpose** (reasons in `docs/ux-audit.md`): rep ranges on plan slots (8–12 rather than 8), which is what real double progression needs and which changes the plan model, the stamping logic and the backup format; warm-up sets; a plate calculator; automatic progression, mesocycles and deloads; Apple Health and Apple Watch.
+- **Converted weights aren't plate-friendly.** "Convert to lb" turns 72.5 kg into 159.8 lb. That is the honest number, and a stepper adds 5 to whatever is there, but nothing offers to round converted weights to the nearest plate.
+- **The rest timer's alert and haptics are unverified on hardware.** The simulator has no haptics and the notification path was only exercised as far as scheduling.
 - **`ExerciseLibraryViewModel`** is wired for mutations (add/delete) but the library and picker views inline their own `@Query`-based filtering. Consolidate if the filter logic grows complex.
 - **`BuildProject` may target a physical device instead of the simulator** depending on Xcode's currently-selected scheme destination, with no MCP tool to switch it. If a simulator install/launch doesn't reflect a change you just built, check `PLog.app/PLog.debug.dylib`'s mtime in DerivedData's `Debug-iphonesimulator` products dir before assuming the app is broken — it may just be stale. Fall back to `xcodebuild -project PLog.xcodeproj -scheme PLog -configuration Debug -destination "platform=iOS Simulator,id=<UDID>" -derivedDataPath <tmp> build` to force a simulator build.

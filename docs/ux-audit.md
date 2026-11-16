@@ -62,7 +62,7 @@ dashboard editor, `.alert` for destructive actions, and so on). None of those ar
    plan's own Weekly Sets card. A new user's first impression of the volume feature is a
    wall of orange.
 8. **Everyone gets the same plan.** PPL is seeded active whether the user trains three
-   days or six. There is no choice and no other ready-made programme to start from.
+   days or six. There is no choice and no other ready-made program to start from.
 9. **Twenty exercises.** No pull-up, dip, hack squat, leg extension, hip thrust, preacher
    curl, skull crusher, pec deck or rear-delt fly. Building a real bodybuilding plan means
    typing the library in by hand.
@@ -133,7 +133,7 @@ app-store analyses, most of them written by competing vendors. Treat as weak sig
 - Logging in as few taps as possible, with last time's numbers visible where the set is
   edited, without extra taps or scrolling.
 - A rest timer, ideally starting on its own.
-- Templates and ready-made programmes.
+- Templates and ready-made programs.
 - RIR/RPE as a per-set field (several apps put it behind a paywall).
 - Clear progress history and data export.
 - The most repeated complaint is not a missing feature but clutter: "too much stuff I
@@ -165,11 +165,11 @@ research says a bodybuilder asks, and it can be ignored by someone who doesn't w
 | C | Honest trend badges: an untouched set shows nothing; bodyweight sets are graded on reps | Gaps 3, 4 |
 | D | Personal records: a mark on a set that beats the exercise's all-time best | Gap 10 |
 | E | Rest timer on the session screen, one tap, with presets | Gap 5, rest research |
-| F | A larger starter library and ready-made programmes that each meet the weekly-set target, offered once on first launch and from the Plans tab | Gaps 7, 8, 9 |
+| F | A larger starter library and ready-made programs that each meet the weekly-set target, offered once on first launch and from the Plans tab | Gaps 7, 8, 9 |
 | G | Reps in reserve per set, off unless switched on in Settings | Gap 11, failure research |
 | H | Body-weight log with a trend | Gap 12 |
 | I | Exercise notes shown while training; a session summary instead of a rule on the Train card; no eyebrow labels | Gaps 13, 14, 16 |
-| J | Hardening: no crash when the store won't open, restore rolls back on failure, imported values clamped, VoiceOver labels on set rows | Gaps 17–20 |
+| J | Hardening: no crash when the store won't open, an import that can't be left half-done, imported values clamped, VoiceOver labels on set rows | Gaps 17–20 |
 
 **Not building, and why**
 
@@ -184,3 +184,58 @@ research says a bodybuilder asks, and it can be ignored by someone who doesn't w
   the plan model, the stamping logic and the backup format. Left for a pass of its own.
 - A sample dashboard on the empty Progress tab (gap 15). The empty state's copy is
   improved; a full preview dashboard was judged to be decoration.
+
+## 4. Outcome
+
+Everything in the Build table was built. What changed against the plan while building:
+
+- **Restore doesn't roll back; it can't be left half-done instead.** The plan was to call
+  `context.rollback()` if an import failed. A test of exactly that crashed inside SwiftData
+  ("Unexpected backing data for snapshot creation"): rollback traps when the context holds
+  cascade-deleted rows that were never faulted in, which an import always does. The import
+  now reads everything that can fail before its first change, and the replace itself can't
+  throw. Unit conversion keeps the original values and puts them back by hand on failure.
+- **The set editor became three rows.** As one stacked row, a hint that wrapped to two lines
+  squeezed the weight stepper and its number shrank. Found in the simulator, not in review.
+- **The rest timer stops growing at the first accessibility text size.** At the largest size
+  it covered the sets beneath it.
+- **Gap 15** (blank Progress tab) got better copy only, as planned.
+
+### Interaction details reviewed
+
+| Before | After | Why |
+| --- | --- | --- |
+| PR badge would appear with no transition | Fades in from 85% scale over 0.2 s; fade only under Reduce Motion | Nothing should appear from nothing, and a record is rare enough to earn a moment |
+| Rest capsule swapped idle and running states instantly | 0.25 s snappy change with a light impact | A state change the user caused should be felt and seen |
+| Countdown digits would jump each second | Numeric content transition counting down, driven by a one-second `TimelineView` | Reads as one number changing; nothing else on the screen redraws |
+| Welcome program choice had no feedback beyond the checkmark | Selection haptic on change | Confirms the tap on a screen the user sees once |
+| "Different day" and "Log a Blank Workout" were text-height targets | 44 pt tall, full card width | Minimum touch target |
+| Program rows inherited the accent tint on iOS 26 | `.tint(.primary)`, accent only on the icon | Colour marks what's interactive, not every word of the label |
+| Hint text shared a row with the steppers | Its own row, in two lines | Wrapping text was resizing a control |
+
+No animation was added to anything a lifter does dozens of times a session (stepping a
+weight, opening a set, adding a set); those keep the platform's own motion.
+
+### Verified, and not
+
+Run on an iPhone 17 simulator, iOS 26.5:
+
+- Fresh install with a US region: welcome sheet, pounds preselected, program started, first
+  session opened, a held stepper filled all four sets.
+- Fresh install elsewhere: kilograms; Skip leads to the "No plan yet" card.
+- This build installed over a store written by the previous one (416 sessions, the old
+  seeded plans): data intact, no welcome sheet, unit kg.
+- With two years of generated history: trend badges, the PR mark, the hint, reps in
+  reserve, the rest timer through a full one-minute countdown, converting kg to lb, the
+  body-weight log and its card, the Programs sheet and the weekly sets of an installed
+  program (Push / Pull / Legs: 11 groups on target, 2 below).
+- Dark appearance and the largest accessibility text size on the Train card, the session
+  screen, the set editor and the welcome sheet.
+- 50 unit tests pass.
+
+Not verified: anything on a physical device; haptics; the rest-timer notification actually
+arriving (only that it's scheduled behind the Settings switch); VoiceOver by ear (labels
+were set in code and not listened to); iPad and landscape; iOS 17 and 18 (the deployment
+target is 17.6 but only 26.5 was run); the store-won't-open screen (no way to make the
+store fail on demand was built); file export and import through the system pickers (the
+round trip is covered by tests, not by hand).
